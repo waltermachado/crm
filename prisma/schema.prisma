@@ -1,0 +1,407 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider     = "postgresql"
+  url          = env("DATABASE_URL")
+  directUrl    = env("DIRECT_URL")
+  relationMode = "prisma"
+}
+
+enum WorkspaceRole {
+  admin
+  sales_manager
+  support_lead
+}
+
+enum DealStage {
+  qualification
+  discovery
+  proposal
+  negotiation
+  closed
+}
+
+enum TicketStatus {
+  open
+  pending
+  resolved
+}
+
+enum ActivityEntityType {
+  company
+  contact
+  deal
+  ticket
+}
+
+enum DealEventType {
+  DEAL_CREATED
+  DEAL_UPDATED
+  DEAL_MOVED
+  DEAL_DELETED
+}
+
+enum IntegrationProvider {
+  GOOGLE
+  APPLE
+}
+
+enum CalendarEventType {
+  MEETING
+  TASK
+  SCHEDULE
+  PERSONAL
+}
+
+enum NoteViewType {
+  GRID
+  KANBAN
+  DOC
+  WHITEBOARD
+}
+
+model Workspace {
+  id                   String                @id @default(cuid())
+  name                 String
+  slug                 String                @unique
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  memberships          Membership[]
+  companies            Company[]
+  contacts             Contact[]
+  deals                Deal[]
+  pipelines            Pipeline[]
+  pipelineStages       PipelineStage[]
+  dealStageTransitions DealStageTransition[]
+  dealEventLogs        DealEventLog[]
+  integrationAccounts  IntegrationAccount[]
+  calendarEvents       CalendarEvent[]
+  noteWorkspaces       NoteWorkspace[]
+  tickets              Ticket[]
+  activities           Activity[]
+}
+
+model Membership {
+  id                   String                @id @default(cuid())
+  workspaceId          String
+  userId               String
+  email                String
+  fullName             String
+  role                 WorkspaceRole
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  workspace            Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts             Contact[]
+  deals                Deal[]
+  tickets              Ticket[]
+  activities           Activity[]
+  dealStageTransitions DealStageTransition[]
+  dealEventLogs        DealEventLog[]
+  integrationAccounts  IntegrationAccount[]
+  calendarEvents       CalendarEvent[]
+
+  @@unique([workspaceId, userId])
+  @@index([userId])
+  @@index([workspaceId, role])
+}
+
+model Company {
+  id          String    @id @default(cuid())
+  workspaceId String
+  name        String
+  industry    String?
+  website     String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  contacts    Contact[]
+  deals       Deal[]
+
+  @@index([workspaceId])
+  @@index([name])
+}
+
+model Contact {
+  id                String          @id @default(cuid())
+  workspaceId       String
+  companyId         String?
+  ownerMembershipId String?
+  fullName          String
+  email             String?
+  phone             String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  workspace         Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  company           Company?        @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  ownerMembership   Membership?     @relation(fields: [ownerMembershipId], references: [id], onDelete: SetNull)
+  deals             Deal[]
+  calendarEvents    CalendarEvent[]
+
+  @@index([workspaceId])
+  @@index([companyId])
+  @@index([ownerMembershipId])
+}
+
+model Deal {
+  id                String                @id @default(cuid())
+  workspaceId       String
+  pipelineId        String?
+  stageId           String?
+  companyId         String?
+  contactId         String?
+  ownerMembershipId String?
+  name              String
+  description       String?
+  status            String?
+  stage             DealStage
+  valueCents        BigInt                @default(0)
+  position          Int                   @default(0)
+  expectedCloseAt   DateTime?
+  enteredStageAt    DateTime              @default(now())
+  webhookMetadata   Json?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  workspace         Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline          Pipeline?             @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  stageRecord       PipelineStage?        @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  company           Company?              @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contact           Contact?              @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  ownerMembership   Membership?           @relation(fields: [ownerMembershipId], references: [id], onDelete: SetNull)
+  stageTransitions  DealStageTransition[]
+  eventLogs         DealEventLog[]
+  calendarEvents    CalendarEvent[]
+
+  @@index([workspaceId, stage])
+  @@index([workspaceId, pipelineId, stageId, position])
+  @@index([pipelineId])
+  @@index([stageId])
+  @@index([contactId])
+  @@index([companyId])
+  @@index([ownerMembershipId])
+}
+
+model Pipeline {
+  id          String          @id @default(cuid())
+  workspaceId String
+  name        String
+  isDefault   Boolean         @default(false)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  stages      PipelineStage[]
+  deals       Deal[]
+  eventLogs   DealEventLog[]
+
+  @@index([workspaceId])
+  @@index([workspaceId, isDefault])
+}
+
+model PipelineStage {
+  id                  String                @id @default(cuid())
+  workspaceId         String
+  pipelineId          String
+  name                String
+  slug                String
+  position            Int
+  colorToken          String?
+  isClosedWon         Boolean               @default(false)
+  isClosedLost        Boolean               @default(false)
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  workspace           Workspace             @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline            Pipeline              @relation(fields: [pipelineId], references: [id], onDelete: Cascade)
+  deals               Deal[]
+  outgoingTransitions DealStageTransition[] @relation("FromStageTransitions")
+  incomingTransitions DealStageTransition[] @relation("ToStageTransitions")
+  eventLogs           DealEventLog[]
+
+  @@unique([pipelineId, slug])
+  @@unique([pipelineId, position])
+  @@index([workspaceId, pipelineId])
+}
+
+model DealStageTransition {
+  id                             String         @id @default(cuid())
+  workspaceId                    String
+  dealId                         String
+  actorMembershipId              String?
+  fromStageId                    String?
+  toStageId                      String?
+  durationInPreviousStageSeconds Int?
+  createdAt                      DateTime       @default(now())
+  workspace                      Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  deal                           Deal           @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  actorMembership                Membership?    @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+  fromStage                      PipelineStage? @relation("FromStageTransitions", fields: [fromStageId], references: [id], onDelete: SetNull)
+  toStage                        PipelineStage? @relation("ToStageTransitions", fields: [toStageId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([dealId, createdAt(sort: Desc)])
+  @@index([actorMembershipId])
+  @@index([fromStageId])
+  @@index([toStageId])
+}
+
+model DealEventLog {
+  id                String         @id @default(cuid())
+  workspaceId       String
+  pipelineId        String?
+  stageId           String?
+  dealId            String?
+  actorMembershipId String?
+  eventType         DealEventType
+  payload           Json
+  webhookUrl        String?
+  deliveredAt       DateTime?
+  responseStatus    Int?
+  createdAt         DateTime       @default(now())
+  workspace         Workspace      @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pipeline          Pipeline?      @relation(fields: [pipelineId], references: [id], onDelete: SetNull)
+  stage             PipelineStage? @relation(fields: [stageId], references: [id], onDelete: SetNull)
+  deal              Deal?          @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  actorMembership   Membership?    @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([dealId, createdAt(sort: Desc)])
+  @@index([eventType, createdAt(sort: Desc)])
+  @@index([pipelineId])
+  @@index([stageId])
+  @@index([actorMembershipId])
+}
+
+model Ticket {
+  id                String       @id @default(cuid())
+  workspaceId       String
+  ownerMembershipId String?
+  subject           String
+  status            TicketStatus
+  priority          String?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  workspace         Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerMembership   Membership?  @relation(fields: [ownerMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, status])
+  @@index([ownerMembershipId])
+}
+
+model IntegrationAccount {
+  id                   String              @id @default(cuid())
+  workspaceId          String
+  membershipId         String?
+  userId               String
+  provider             IntegrationProvider
+  calendarName         String
+  providerAccountEmail String?
+  accessToken          String?
+  refreshToken         String?
+  expiresAt            DateTime?
+  syncToken            String?
+  externalCalendarId   String
+  settings             Json?
+  webhookChannelId     String?
+  webhookResourceId    String?
+  isActive             Boolean             @default(true)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  membership           Membership?         @relation(fields: [membershipId], references: [id], onDelete: SetNull)
+  calendarEvents       CalendarEvent[]
+
+  @@unique([provider, userId, externalCalendarId])
+  @@index([workspaceId, provider, isActive])
+  @@index([membershipId])
+  @@index([userId])
+}
+
+model CalendarEvent {
+  id                   String              @id @default(cuid())
+  workspaceId          String
+  ownerMembershipId    String?
+  integrationAccountId String?
+  userId               String
+  contactId            String?
+  dealId               String?
+  title                String
+  description          String?
+  location             String?
+  startDatetime        DateTime
+  endDatetime          DateTime
+  isAllDay             Boolean             @default(false)
+  eventType            CalendarEventType
+  externalEventId      String?
+  lastSyncedAt         DateTime?
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
+  workspace            Workspace           @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  ownerMembership      Membership?         @relation(fields: [ownerMembershipId], references: [id], onDelete: SetNull)
+  integrationAccount   IntegrationAccount? @relation(fields: [integrationAccountId], references: [id], onDelete: SetNull)
+  contact              Contact?            @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  deal                 Deal?               @relation(fields: [dealId], references: [id], onDelete: SetNull)
+
+  @@unique([workspaceId, externalEventId])
+  @@index([workspaceId, startDatetime, endDatetime])
+  @@index([ownerMembershipId, startDatetime])
+  @@index([integrationAccountId])
+  @@index([contactId])
+  @@index([dealId])
+  @@index([userId])
+}
+
+model Activity {
+  id                String             @id @default(cuid())
+  workspaceId       String
+  actorMembershipId String?
+  entityType        ActivityEntityType
+  entityId          String
+  summary           String
+  metadata          Json?
+  createdAt         DateTime           @default(now())
+  workspace         Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  actorMembership   Membership?        @relation(fields: [actorMembershipId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt(sort: Desc)])
+  @@index([actorMembershipId])
+  @@index([entityType, entityId])
+}
+
+model NoteWorkspace {
+  id                String       @id @default(cuid())
+  crmWorkspaceId    String
+  userId            String
+  viewType          NoteViewType
+  name              String
+  documentContent   String?
+  whiteboardData    Json?
+  columnDefinitions Json?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  crmWorkspace      Workspace    @relation(fields: [crmWorkspaceId], references: [id], onDelete: Cascade)
+  noteCards         NoteCard[]
+
+  @@index([crmWorkspaceId, userId, viewType])
+}
+
+model NoteCard {
+  id          String        @id
+  workspaceId String
+  title       String
+  content     String?
+  color       String?
+  columnName  String?
+  order       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  workspace   NoteWorkspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, order])
+  @@index([workspaceId, columnName, order])
+}
+
+model NoteSequence {
+  id           String   @id
+  currentValue Int      @default(0)
+  updatedAt    DateTime @updatedAt
+}
