@@ -118,3 +118,4 @@ npm run deploy
 - Error boundaries and logging foundations
 - Prisma schema prepared for tenant-aware, RLS-friendly expansion
 # crm
+# crm
