@@ -8,7 +8,7 @@
     "build:worker": "npx @opennextjs/cloudflare build",
     "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "npx @opennextjs/cloudflare deploy",
+    "deploy": "npm run build:worker && npx @opennextjs/cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "lint": "eslint .",
     "check": "tsc --noEmit && eslint .",
