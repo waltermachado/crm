@@ -8,7 +8,6 @@ import { hasDatabaseConfig } from "@/lib/env/server";
 import type { AppLocale } from "@/lib/i18n/config";
 import { createLogger } from "@/lib/logger";
 import { getCalendarContext } from "@/lib/calendar/context";
-import { getDemoNotesSnapshot } from "@/lib/notes/demo-store";
 import type {
   NotesSnapshot,
   NoteWhiteboardData,
@@ -154,7 +153,7 @@ function mapWorkspaceRecord(
 
 export async function getNotesSnapshot(locale: AppLocale): Promise<NotesSnapshot> {
   if (!hasDatabaseConfig()) {
-    return getDemoNotesSnapshot(locale);
+    throw new Error("Database configuration is missing.");
   }
 
   try {
@@ -189,7 +188,7 @@ export async function getNotesSnapshot(locale: AppLocale): Promise<NotesSnapshot
       },
     };
   } catch (error) {
-    logger.error("Failed to load notes workspaces. Falling back to demo state.", error);
-    return getDemoNotesSnapshot(locale);
+    logger.error("Failed to load notes workspaces.", error);
+    throw error;
   }
 }

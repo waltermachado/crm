@@ -6,7 +6,6 @@ import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/db/supabase";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
-import { getDemoPipelineSnapshot } from "@/lib/deals/demo-store";
 import {
   DEFAULT_ACTOR,
   DEFAULT_PIPELINE_NAME,
@@ -242,7 +241,7 @@ export async function getDealsBoardSnapshot(
   locale: AppLocale,
 ): Promise<DealsBoardSnapshot> {
   if (!hasDatabaseConfig()) {
-    return getDemoPipelineSnapshot(locale);
+    throw new Error("Database configuration is missing.");
   }
 
   try {
@@ -250,7 +249,7 @@ export async function getDealsBoardSnapshot(
     const context = await getOrCreatePipelineContext(supabase);
 
     if (!context) {
-      return getDemoPipelineSnapshot(locale);
+      throw new Error("Pipeline context could not be created.");
     }
 
     const [dealsResult, ownersResult] = await Promise.all([
@@ -355,7 +354,7 @@ export async function getDealsBoardSnapshot(
       },
     };
   } catch (error) {
-    logger.error("Failed to load deals pipeline. Falling back to demo state.", error);
-    return getDemoPipelineSnapshot(locale);
+    logger.error("Failed to load deals pipeline.", error);
+    throw error;
   }
 }

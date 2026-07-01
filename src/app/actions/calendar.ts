@@ -7,14 +7,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/db/supabase";
 import { getCalendarContext } from "@/lib/calendar/context";
-import {
-  createDemoCalendarEvent,
-  deleteDemoCalendarEvent,
-  disconnectDemoCalendarConnection,
-  reactivateDemoCalendarConnection,
-  saveDemoAppleCalendarConnection,
-  updateDemoCalendarEvent,
-} from "@/lib/calendar/demo-store";
 import { OSLERNOTES_CALENDAR_ID } from "@/lib/calendar/constants";
 import { CALENDAR_AGENDA_PATH, CALENDAR_SETTINGS_PATH } from "@/lib/calendar/routes";
 import { dispatchCalendarSyncJob } from "@/lib/calendar/sync";
@@ -85,9 +77,10 @@ export async function createEventAction(
   const parsed = createEventSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await createDemoCalendarEvent(parsed);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -146,9 +139,10 @@ export async function updateEventAction(
   const parsed = updateEventSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await updateDemoCalendarEvent(parsed);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -214,9 +208,10 @@ export async function deleteEventAction(
   const parsed = deleteEventSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await deleteDemoCalendarEvent(parsed);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -289,9 +284,10 @@ export async function saveAppleCalendarConnectionAction(
   }
 
   if (!hasDatabaseConfig()) {
-    const result = await saveDemoAppleCalendarConnection(parsed.data);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   if (!hasSecretEncryptionConfig()) {
@@ -370,9 +366,10 @@ export async function disconnectCalendarConnectionAction(
   }
 
   if (!hasDatabaseConfig()) {
-    const result = await disconnectDemoCalendarConnection(parsed.data);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -413,9 +410,10 @@ export async function reactivateCalendarConnectionAction(
   }
 
   if (!hasDatabaseConfig()) {
-    const result = await reactivateDemoCalendarConnection(parsed.data);
-    revalidateCalendarViews();
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {

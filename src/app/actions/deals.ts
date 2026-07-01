@@ -7,11 +7,6 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { supabaseAdmin } from "@/lib/db/supabase";
 import { getOrCreatePipelineContext } from "@/lib/deals/board";
-import {
-  deleteDemoDeal,
-  moveDemoDeal,
-  saveDemoDeal,
-} from "@/lib/deals/demo-store";
 import { buildDealMovedPayload, emitDealEvent } from "@/lib/deals/events";
 import { normalizeDealMoveTargetIndex } from "@/lib/deals/reorder";
 import { getStageMetaById } from "@/lib/deals/stage-definitions";
@@ -220,57 +215,9 @@ export async function moveDealAction(input: DealMoveInput): Promise<DealActionRe
   // #endregion
 
   if (!hasDatabaseConfig()) {
-    const result = await moveDemoDeal(parsed);
-
-    if (!result?.nextDeal) {
-      return {
-        status: "error",
-        message: "Não foi possível mover o negócio.",
-      };
-    }
-
-    const durationInPreviousStageSeconds = Math.max(
-      0,
-      Math.floor(
-        (Date.now() - new Date(result.previousEnteredStageAt).getTime()) / 1000,
-      ),
-    );
-
-    // #region debug-point E:server-action-demo-result
-    fetch("http://127.0.0.1:7778/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"kanban-reorder",runId:"pre-fix",hypothesisId:"E",location:"actions/deals.ts:moveDealAction:demo",msg:"[DEBUG] move action demo result",data:{previousStageSlug:result.previousStageSlug,nextStageSlug:result.nextDeal.stageSlug,nextStageId:result.nextDeal.stageId,nextPosition:result.nextDeal.position},ts:Date.now()})}).catch(()=>{});
-    // #endregion
-
-    if (result.previousStageSlug !== result.nextDeal.stageSlug) {
-      await emitDealEvent({
-        workspaceId: "demo-workspace",
-        pipelineId: result.nextDeal.pipelineId,
-        stageId: result.nextDeal.stageId,
-        dealId: result.nextDeal.id,
-        actor: {
-          id: result.nextDeal.ownerId,
-          name: result.nextDeal.ownerName,
-        },
-        type: "DEAL_MOVED",
-        payload: buildDealMovedPayload({
-          actor: {
-            id: result.nextDeal.ownerId,
-            name: result.nextDeal.ownerName,
-          },
-          dealId: result.nextDeal.id,
-          title: result.nextDeal.title,
-          value: result.nextDeal.value,
-          fromStage: result.previousStageSlug,
-          toStage: result.nextDeal.stageSlug,
-          durationInPreviousStageSeconds,
-        }).data,
-      });
-    }
-
-    revalidatePath("/deals");
-
     return {
-      status: "success",
-      message: "Negócio movido com sucesso.",
+      status: "error",
+      message: "Database config is missing.",
     };
   }
 
@@ -404,77 +351,9 @@ export async function saveDealAction(input: SaveDealInput): Promise<DealActionRe
   const parsed = saveDealSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await saveDemoDeal(parsed);
-
-    if (!result?.deal) {
-      return {
-        status: "error",
-        message: "Não foi possível salvar o negócio.",
-      };
-    }
-
-    const eventType = result.isNew ? "DEAL_CREATED" : "DEAL_UPDATED";
-
-    await emitDealEvent({
-      workspaceId: "demo-workspace",
-      pipelineId: result.deal.pipelineId,
-      stageId: result.deal.stageId,
-      dealId: result.deal.id,
-      actor: {
-        id: result.deal.ownerId,
-        name: result.deal.ownerName,
-      },
-      type: eventType,
-      payload: {
-        dealId: result.deal.id,
-        title: result.deal.title,
-        value: result.deal.value,
-        stage: result.deal.stageSlug,
-        companyName: result.deal.companyName,
-        contactPhone: result.deal.contactPhone ?? null,
-      },
-    });
-
-    if (!result.isNew && result.previousStageSlug && result.previousStageSlug !== result.deal.stageSlug) {
-      await emitDealEvent({
-        workspaceId: "demo-workspace",
-        pipelineId: result.deal.pipelineId,
-        stageId: result.deal.stageId,
-        dealId: result.deal.id,
-        actor: {
-          id: result.deal.ownerId,
-          name: result.deal.ownerName,
-        },
-        type: "DEAL_MOVED",
-        payload: buildDealMovedPayload({
-          actor: {
-            id: result.deal.ownerId,
-            name: result.deal.ownerName,
-          },
-          dealId: result.deal.id,
-          title: result.deal.title,
-          value: result.deal.value,
-          fromStage: result.previousStageSlug,
-          toStage: result.deal.stageSlug,
-          durationInPreviousStageSeconds: result.previousEnteredStageAt
-            ? Math.max(
-                0,
-                Math.floor(
-                  (Date.now() - new Date(result.previousEnteredStageAt).getTime()) / 1000,
-                ),
-              )
-            : 0,
-        }).data,
-      });
-    }
-
-    revalidatePath("/deals");
-
     return {
-      status: "success",
-      message: result.isNew
-        ? "Negócio criado com sucesso."
-        : "Negócio atualizado com sucesso.",
+      status: "error",
+      message: "Database config is missing.",
     };
   }
 
@@ -657,38 +536,9 @@ export async function deleteDealAction(
   const parsed = deleteDealSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const deleted = await deleteDemoDeal(parsed.dealId);
-
-    if (!deleted) {
-      return {
-        status: "error",
-        message: "Negócio não encontrado.",
-      };
-    }
-
-    await emitDealEvent({
-      workspaceId: "demo-workspace",
-      pipelineId: deleted.pipelineId,
-      stageId: deleted.stageId,
-      dealId: deleted.id,
-      actor: {
-        id: deleted.ownerId,
-        name: deleted.ownerName,
-      },
-      type: "DEAL_DELETED",
-      payload: {
-        dealId: deleted.id,
-        title: deleted.title,
-        value: deleted.value,
-        stage: deleted.stageSlug,
-      },
-    });
-
-    revalidatePath("/deals");
-
     return {
-      status: "success",
-      message: "Negócio removido com sucesso.",
+      status: "error",
+      message: "Database config is missing.",
     };
   }
 

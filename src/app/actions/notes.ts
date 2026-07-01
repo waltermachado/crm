@@ -10,16 +10,6 @@ import { supabaseAdmin } from "@/lib/db/supabase";
 import { getCalendarContext } from "@/lib/calendar/context";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
-import {
-  createDemoNote,
-  deleteDemoNote,
-  moveDemoNote,
-  renameDemoWorkspace,
-  saveDemoDocument,
-  saveDemoWhiteboard,
-  updateDemoNote,
-  updateDemoWorkspaceColumns,
-} from "@/lib/notes/demo-store";
 import type {
   CreateNoteInput,
   DeleteNoteInput,
@@ -170,9 +160,10 @@ export async function createNoteAction(input: CreateNoteInput): Promise<NoteActi
   const parsed = createNoteSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await createDemoNote(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -241,9 +232,10 @@ export async function updateNoteAction(input: UpdateNoteInput): Promise<NoteActi
   const parsed = updateNoteSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await updateDemoNote(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -293,9 +285,10 @@ export async function deleteNoteAction(input: DeleteNoteInput): Promise<NoteActi
   const parsed = deleteNoteSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await deleteDemoNote(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -334,9 +327,10 @@ export async function moveNoteAction(input: MoveNoteInput): Promise<NoteActionRe
   const parsed = moveNoteSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await moveDemoNote(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -408,9 +402,10 @@ export async function saveDocumentAction(input: SaveDocumentInput): Promise<Note
   const parsed = saveDocumentSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await saveDemoDocument(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -447,9 +442,10 @@ export async function saveWhiteboardAction(
   const parsed = saveWhiteboardSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await saveDemoWhiteboard(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -486,9 +482,10 @@ export async function updateWorkspaceColumnsAction(
   const parsed = updateWorkspaceColumnsSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await updateDemoWorkspaceColumns(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {
@@ -548,9 +545,10 @@ export async function renameWorkspaceAction(
   const parsed = renameWorkspaceSchema.parse(input);
 
   if (!hasDatabaseConfig()) {
-    const result = await renameDemoWorkspace(parsed);
-    revalidatePath("/notes");
-    return result;
+    return {
+      status: "error",
+      message: "Database config is missing.",
+    };
   }
 
   try {

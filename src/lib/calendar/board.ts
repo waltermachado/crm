@@ -4,7 +4,6 @@ import type { Database } from "@/types/database";
 type IntegrationProvider = Database["public"]["Enums"]["IntegrationProvider"];
 
 import { supabaseAdmin } from "@/lib/db/supabase";
-import { getDemoCalendarSnapshot } from "@/lib/calendar/demo-store";
 import { getCalendarContext } from "@/lib/calendar/context";
 import { OSLERNOTES_CALENDAR_ID, CALENDAR_EVENT_TYPE_META, CALENDAR_PROVIDER_META } from "@/lib/calendar/constants";
 import { hasDatabaseConfig } from "@/lib/env/server";
@@ -40,7 +39,7 @@ function buildPlaceholderConnection(provider: Exclude<IntegrationProvider, never
 
 export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSnapshot> {
   if (!hasDatabaseConfig()) {
-    return getDemoCalendarSnapshot(locale);
+    throw new Error("Database configuration is missing.");
   }
 
   try {
@@ -183,7 +182,7 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
       },
     };
   } catch (error) {
-    logger.error("Failed to load calendar snapshot. Falling back to demo state.", error);
-    return getDemoCalendarSnapshot(locale);
+    logger.error("Failed to load calendar snapshot.", error);
+    throw error;
   }
 }
