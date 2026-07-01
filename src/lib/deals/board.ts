@@ -113,8 +113,8 @@ async function ensureWorkspace(prisma: PrismaClient) {
   return prisma.workspace.create({
     data: {
       id: DEFAULT_WORKSPACE_ID,
-      name: "Axe CRM",
-      slug: "axe-crm",
+      name: "OslerNotes CRM",
+      slug: "oslernotes-crm",
     },
   });
 }

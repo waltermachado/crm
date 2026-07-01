@@ -1,10 +1,11 @@
 {
-  "name": "axe-crm",
+  "name": "oslernotes-crm",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
+    "build:worker": "npx @opennextjs/cloudflare build",
     "start": "next start",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
@@ -15,7 +16,8 @@
     "prisma:generate": "prisma generate",
     "prisma:format": "prisma format",
     "prisma:migrate:dev": "prisma migrate dev",
-    "prisma:studio": "prisma studio"
+    "prisma:studio": "prisma studio",
+    "pages:build": "npx @cloudflare/next-on-pages"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

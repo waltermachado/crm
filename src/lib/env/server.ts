@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const serverEnvSchema = z.object({
-  NEXT_PUBLIC_APP_NAME: z.string().default("Axe CRM"),
+  NEXT_PUBLIC_APP_NAME: z.string().default("OslerNotes CRM"),
   DATABASE_URL: z.string().min(1).optional(),
   DIRECT_URL: z.string().min(1).optional(),
   LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),

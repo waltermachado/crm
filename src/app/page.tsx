@@ -10,7 +10,7 @@ function getCopy(locale: "en-US" | "pt-BR") {
   if (locale === "pt-BR") {
     return {
       kicker: "Controle de acesso",
-      title: "Axe CRM com autenticação, RLS e dashboard híbrido.",
+      title: "OslerNotes CRM com autenticação, RLS e dashboard híbrido.",
       description:
         "Fluxo completo com `@supabase/ssr`, proteção por middleware, dados compartilhados em tabelas CRM e anotações privadas limitadas por `auth.uid() = user_id`.",
       security: "Sessão segura por cookie",
@@ -19,7 +19,7 @@ function getCopy(locale: "en-US" | "pt-BR") {
 
   return {
     kicker: "Access control",
-    title: "Axe CRM with authentication, RLS, and a hybrid dashboard.",
+    title: "OslerNotes CRM with authentication, RLS, and a hybrid dashboard.",
     description:
       "End-to-end flow powered by `@supabase/ssr`, middleware protection, shared CRM tables, and private notes locked behind `auth.uid() = user_id`.",
     security: "Secure cookie session",

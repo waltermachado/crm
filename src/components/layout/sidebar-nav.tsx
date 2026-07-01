@@ -16,6 +16,8 @@ import {
 import { useI18n } from "@/lib/i18n/provider";
 import { cn } from "@/lib/utils";
 
+import type { Route } from "next";
+
 export function SidebarNav({
   collapsed,
   onNavigate,
@@ -34,7 +36,7 @@ export function SidebarNav({
     { href: "/companies", label: messages.navigation.companies, icon: Building2 },
     { href: "/tickets", label: messages.navigation.tickets, icon: LifeBuoy },
     { href: "/settings", label: messages.navigation.settings, icon: Settings2 },
-  ] satisfies Array<{ href: string; label: string; icon: typeof LayoutDashboard }>;
+  ] satisfies Array<{ href: Route; label: string; icon: typeof LayoutDashboard }>;
 
   return (
     <nav className="space-y-1.5" aria-label={messages.navigation.crmNavigation}>

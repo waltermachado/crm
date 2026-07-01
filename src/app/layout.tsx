@@ -30,8 +30,8 @@ const headingFont = Fraunces({
 
 export const metadata: Metadata = {
   title: {
-    default: "Axe CRM",
-    template: "%s | Axe CRM",
+    default: "OslerNotes CRM",
+    template: "%s | OslerNotes CRM",
   },
   description:
     "Production-ready enterprise CRM baseline built with Next.js 15, Supabase Auth, row-level security, and shadcn/ui.",

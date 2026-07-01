@@ -13,7 +13,7 @@ import {
   saveDemoAppleCalendarConnection,
   updateDemoCalendarEvent,
 } from "@/lib/calendar/demo-store";
-import { AXE_CALENDAR_ID } from "@/lib/calendar/constants";
+import { OSLERNOTES_CALENDAR_ID } from "@/lib/calendar/constants";
 import { CALENDAR_AGENDA_PATH, CALENDAR_SETTINGS_PATH } from "@/lib/calendar/routes";
 import { dispatchCalendarSyncJob } from "@/lib/calendar/sync";
 import { hasDatabaseConfig } from "@/lib/env/server";
@@ -62,7 +62,7 @@ async function resolveIntegrationAccountId(
   workspaceId: string,
   sourceCalendarId?: string,
 ) {
-  if (!sourceCalendarId || sourceCalendarId === AXE_CALENDAR_ID) {
+  if (!sourceCalendarId || sourceCalendarId === OSLERNOTES_CALENDAR_ID) {
     return null;
   }
 

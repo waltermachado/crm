@@ -11,7 +11,7 @@ export function createPlaceholderDashboardSnapshot(
   const copy = getMessages(locale);
 
   return {
-    workspaceName: "Axe CRM",
+    workspaceName: "OslerNotes CRM",
     reportingRange: copy.dashboard.reportingRange.placeholder,
     metrics: [
       {
@@ -108,7 +108,7 @@ export function createPlaceholderDashboardSnapshot(
         items: [
           {
             id: "deal-5",
-            title: "Axe Enterprise Suite",
+            title: "OslerNotes Enterprise Suite",
             companyName: "Harbor Systems",
             ownerName: "Lena Hart",
             displayValue: formatCurrencyFromCents(1_980_000, locale),

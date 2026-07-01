@@ -183,7 +183,7 @@ function buildInitialValues(
   draft: DraftSelection | null,
   connections: CalendarConnectionRecord[],
 ): EventFormValues {
-  const defaultSource = connections.find((connection) => connection.enabled)?.id ?? "axe-crm";
+  const defaultSource = connections.find((connection) => connection.enabled)?.id ?? "oslernotes-crm";
   const start = event ? new Date(event.startDatetime) : draft?.start ?? new Date();
   const end =
     event ? new Date(event.endDatetime) : draft?.end ?? new Date(Date.now() + 1000 * 60 * 60);
@@ -392,7 +392,7 @@ export function CalendarBoard({ snapshot }: { snapshot: CalendarSnapshot }) {
   const connectedExternalCalendars = useMemo(
     () =>
       snapshot.visibleCalendars.filter(
-        (calendar) => calendar.provider !== "AXE_CRM" && calendar.isConnected,
+        (calendar) => calendar.provider !== "OSLERNOTES_CRM" && calendar.isConnected,
       ),
     [snapshot.visibleCalendars],
   );

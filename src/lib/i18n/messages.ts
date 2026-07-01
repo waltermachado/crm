@@ -172,7 +172,7 @@ export type I18nMessages = {
 export const messages: Record<AppLocale, I18nMessages> = {
   "en-US": {
     common: {
-      appName: "Axe CRM",
+      appName: "OslerNotes CRM",
       save: "Save changes",
       saving: "Saving...",
       language: "Language",
@@ -263,7 +263,7 @@ export const messages: Record<AppLocale, I18nMessages> = {
           ticket: "ticket",
         },
         placeholder: {
-          one: "Proposal packet sent for Axe Enterprise Suite.",
+          one: "Proposal packet sent for OslerNotes Enterprise Suite.",
           two: "New stakeholder added to Northwind Expansion.",
           three: "Priority support ticket moved to pending vendor review.",
           four: "Account health review scheduled for Granite Bio.",
@@ -347,7 +347,7 @@ export const messages: Record<AppLocale, I18nMessages> = {
     },
     errors: {
       globalLabel: "Global error boundary",
-      globalTitle: "Axe CRM hit a critical rendering error.",
+      globalTitle: "OslerNotes CRM hit a critical rendering error.",
       globalDescription:
         "The application stopped before a route-level recovery boundary could take over. Retry once, then review the server logs and environment variables.",
       retry: "Retry render",
@@ -356,7 +356,7 @@ export const messages: Record<AppLocale, I18nMessages> = {
   },
   "pt-BR": {
     common: {
-      appName: "Axe CRM",
+      appName: "OslerNotes CRM",
       save: "Salvar alterações",
       saving: "Salvando...",
       language: "Idioma",
@@ -447,7 +447,7 @@ export const messages: Record<AppLocale, I18nMessages> = {
           ticket: "chamado",
         },
         placeholder: {
-          one: "Pacote de proposta enviado para Axe Enterprise Suite.",
+          one: "Pacote de proposta enviado para OslerNotes Enterprise Suite.",
           two: "Novo stakeholder adicionado à expansão Northwind.",
           three: "Chamado prioritário movido para revisão pendente do fornecedor.",
           four: "Revisão de saúde da conta agendada para Granite Bio.",
@@ -532,7 +532,7 @@ export const messages: Record<AppLocale, I18nMessages> = {
     },
     errors: {
       globalLabel: "Limite global de erro",
-      globalTitle: "Axe CRM encontrou um erro crítico de renderização.",
+      globalTitle: "OslerNotes CRM encontrou um erro crítico de renderização.",
       globalDescription:
         "A aplicação foi interrompida antes que um fallback de rota pudesse assumir. Tente novamente e, se persistir, revise os logs do servidor e as variáveis de ambiente.",
       retry: "Tentar novamente",

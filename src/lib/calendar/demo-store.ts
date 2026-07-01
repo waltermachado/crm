@@ -1,7 +1,7 @@
 import "server-only";
 
 import type { AppLocale } from "@/lib/i18n/config";
-import { AXE_CALENDAR_ID, CALENDAR_EVENT_TYPE_META } from "@/lib/calendar/constants";
+import { OSLERNOTES_CALENDAR_ID, CALENDAR_EVENT_TYPE_META } from "@/lib/calendar/constants";
 import type {
   CalendarActionResult,
   CalendarConnectionRecord,
@@ -49,9 +49,9 @@ function createInitialDemoState(): DemoCalendarState {
   return {
     connections: [
       {
-        id: AXE_CALENDAR_ID,
-        provider: "AXE_CRM",
-        label: "Axe CRM",
+        id: OSLERNOTES_CALENDAR_ID,
+        provider: "OSLERNOTES_CRM",
+        label: "OslerNotes CRM",
         description: "Calendário operacional local do workspace.",
         colorClassName: "bg-sky-500/12 text-sky-700 ring-sky-500/20 dark:text-sky-200",
         enabled: true,
@@ -106,9 +106,9 @@ function createInitialDemoState(): DemoCalendarState {
         endDatetime: setTime(addDays(today, 1), 10, 0).toISOString(),
         isAllDay: false,
         eventType: "MEETING",
-        sourceCalendarId: AXE_CALENDAR_ID,
-        sourceProvider: "AXE_CRM",
-        sourceLabel: "Axe CRM",
+        sourceCalendarId: OSLERNOTES_CALENDAR_ID,
+        sourceProvider: "OSLERNOTES_CRM",
+        sourceLabel: "OslerNotes CRM",
         sourceColorClassName: "bg-sky-500/12 text-sky-700 ring-sky-500/20 dark:text-sky-200",
         dealId: "deal-demo-1",
         dealLabel: "Reativação da Conta Atlas",
@@ -168,9 +168,9 @@ function createInitialDemoState(): DemoCalendarState {
         endDatetime: setTime(addDays(today, 6), 12, 30).toISOString(),
         isAllDay: false,
         eventType: "PERSONAL",
-        sourceCalendarId: AXE_CALENDAR_ID,
-        sourceProvider: "AXE_CRM",
-        sourceLabel: "Axe CRM",
+        sourceCalendarId: OSLERNOTES_CALENDAR_ID,
+        sourceProvider: "OSLERNOTES_CRM",
+        sourceLabel: "OslerNotes CRM",
         sourceColorClassName: "bg-sky-500/12 text-sky-700 ring-sky-500/20 dark:text-sky-200",
         ownerId: "demo-owner-1",
         ownerName: "Walter Machado",
@@ -184,9 +184,9 @@ function createInitialDemoState(): DemoCalendarState {
         endDatetime: addDays(today, 10).toISOString(),
         isAllDay: true,
         eventType: "MEETING",
-        sourceCalendarId: AXE_CALENDAR_ID,
-        sourceProvider: "AXE_CRM",
-        sourceLabel: "Axe CRM",
+        sourceCalendarId: OSLERNOTES_CALENDAR_ID,
+        sourceProvider: "OSLERNOTES_CRM",
+        sourceLabel: "OslerNotes CRM",
         sourceColorClassName: "bg-sky-500/12 text-sky-700 ring-sky-500/20 dark:text-sky-200",
         ownerId: "demo-owner-1",
         ownerName: "Walter Machado",
@@ -277,9 +277,9 @@ export async function createDemoCalendarEvent(
     contactLabel: state.contacts.find((contact) => contact.id === input.contactId)?.label ?? null,
     dealId: input.dealId ?? null,
     dealLabel: state.deals.find((deal) => deal.id === input.dealId)?.label ?? null,
-    lastSyncedAt: source.provider === "AXE_CRM" ? null : new Date().toISOString(),
+    lastSyncedAt: source.provider === "OSLERNOTES_CRM" ? null : new Date().toISOString(),
     externalEventId:
-      source.provider === "AXE_CRM" ? null : `${source.provider.toLowerCase()}-${Date.now()}`,
+      source.provider === "OSLERNOTES_CRM" ? null : `${source.provider.toLowerCase()}-${Date.now()}`,
     ownerId: "demo-owner-1",
     ownerName: "Walter Machado",
   });
@@ -323,7 +323,7 @@ export async function updateDemoCalendarEvent(
     contactLabel: state.contacts.find((contact) => contact.id === input.contactId)?.label ?? null,
     dealId: input.dealId ?? null,
     dealLabel: state.deals.find((deal) => deal.id === input.dealId)?.label ?? null,
-    lastSyncedAt: source.provider === "AXE_CRM" ? current.lastSyncedAt : new Date().toISOString(),
+    lastSyncedAt: source.provider === "OSLERNOTES_CRM" ? current.lastSyncedAt : new Date().toISOString(),
   };
 
   return {

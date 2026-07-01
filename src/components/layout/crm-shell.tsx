@@ -52,10 +52,10 @@ function WorkspaceSidebar({
     <div className="flex h-full flex-col rounded-[28px] border border-border/70 bg-[linear-gradient(180deg,rgba(255,255,255,0.84),rgba(255,255,255,0.58))] p-3 shadow-[0_30px_90px_-60px_rgba(15,23,42,0.55)] backdrop-blur dark:bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(15,23,42,0.7))]">
       <div className={cn("flex items-center gap-3 px-3 py-3", collapsed && "justify-center px-0")}>
         <div className="flex size-10 items-center justify-center rounded-2xl bg-primary text-primary-foreground shadow-sm">
-          <span className="font-semibold tracking-tight">AX</span>
+          <span className="font-semibold tracking-tight">ON</span>
         </div>
         <div className={cn("min-w-0", collapsed && "hidden")}>
-          <p className="font-semibold tracking-tight">Axe CRM</p>
+          <p className="font-semibold tracking-tight">OslerNotes CRM</p>
           <p className="text-xs text-muted-foreground">{messages.shell.enterpriseWorkspace}</p>
         </div>
       </div>

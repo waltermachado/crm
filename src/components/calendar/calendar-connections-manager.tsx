@@ -143,7 +143,7 @@ export function CalendarConnectionsManager({
       };
 
   const externalConnections = useMemo(
-    () => snapshot.visibleCalendars.filter((connection) => connection.provider !== "AXE_CRM"),
+    () => snapshot.visibleCalendars.filter((connection) => connection.provider !== "OSLERNOTES_CRM"),
     [snapshot.visibleCalendars],
   );
   const googleConnection = useMemo(

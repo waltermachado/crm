@@ -1,4 +1,4 @@
-# Axe CRM
+# OslerNotes CRM
 
 Production-ready enterprise CRM baseline built with Next.js 15, App Router, TypeScript, Tailwind CSS v4, shadcn/ui, and Prisma for Supabase PostgreSQL.
 

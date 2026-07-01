@@ -5,7 +5,7 @@ import type { IntegrationProvider } from "@prisma/client";
 import { getPrismaClient } from "@/lib/db/prisma";
 import { getDemoCalendarSnapshot } from "@/lib/calendar/demo-store";
 import { getCalendarContext } from "@/lib/calendar/context";
-import { AXE_CALENDAR_ID, CALENDAR_EVENT_TYPE_META, CALENDAR_PROVIDER_META } from "@/lib/calendar/constants";
+import { OSLERNOTES_CALENDAR_ID, CALENDAR_EVENT_TYPE_META, CALENDAR_PROVIDER_META } from "@/lib/calendar/constants";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import type { AppLocale } from "@/lib/i18n/config";
 import { createLogger } from "@/lib/logger";
@@ -97,11 +97,11 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
 
     const mappedConnections: CalendarConnectionRecord[] = [
       {
-        id: AXE_CALENDAR_ID,
-        provider: "AXE_CRM",
-        label: "Axe CRM",
+        id: OSLERNOTES_CALENDAR_ID,
+        provider: "OSLERNOTES_CRM",
+        label: "OslerNotes CRM",
         description: "Calendário operacional local do workspace.",
-        colorClassName: CALENDAR_PROVIDER_META.AXE_CRM.colorClassName,
+        colorClassName: CALENDAR_PROVIDER_META.OSLERNOTES_CRM.colorClassName,
         enabled: true,
         isConnected: true,
       },
@@ -144,7 +144,7 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
       rangeStart: rangeStartDate.toISOString(),
       rangeEnd: rangeEndDate.toISOString(),
       events: events.map((event) => {
-        const provider = event.integrationAccount?.provider ?? "AXE_CRM";
+        const provider = event.integrationAccount?.provider ?? "OSLERNOTES_CRM";
         return {
           id: event.id,
           title: event.title,
@@ -154,9 +154,9 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
           endDatetime: event.endDatetime.toISOString(),
           isAllDay: event.isAllDay,
           eventType: event.eventType,
-          sourceCalendarId: event.integrationAccountId ?? AXE_CALENDAR_ID,
+          sourceCalendarId: event.integrationAccountId ?? OSLERNOTES_CALENDAR_ID,
           sourceProvider: provider,
-          sourceLabel: event.integrationAccount?.calendarName ?? "Axe CRM",
+          sourceLabel: event.integrationAccount?.calendarName ?? "OslerNotes CRM",
           sourceColorClassName: CALENDAR_PROVIDER_META[provider].colorClassName,
           externalEventId: event.externalEventId,
           lastSyncedAt: event.lastSyncedAt?.toISOString() ?? null,

@@ -1,13 +1,13 @@
 import type { CalendarEventType, CalendarProvider } from "@/types/calendar";
 
-export const AXE_CALENDAR_ID = "axe-crm";
+export const OSLERNOTES_CALENDAR_ID = "oslernotes-crm";
 
 export const CALENDAR_PROVIDER_META: Record<
   CalendarProvider,
   { label: string; colorClassName: string; description: string }
 > = {
-  AXE_CRM: {
-    label: "Axe CRM",
+  OSLERNOTES_CRM: {
+    label: "OslerNotes CRM",
     colorClassName: "bg-sky-500/12 text-sky-700 ring-sky-500/20 dark:text-sky-200",
     description: "Calendário operacional nativo do CRM.",
   },

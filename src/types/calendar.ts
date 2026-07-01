@@ -1,6 +1,6 @@
 export type CalendarViewMode = "month" | "week" | "day";
 
-export type CalendarProvider = "AXE_CRM" | "GOOGLE" | "APPLE";
+export type CalendarProvider = "OSLERNOTES_CRM" | "GOOGLE" | "APPLE";
 
 export type CalendarEventType = "MEETING" | "TASK" | "SCHEDULE" | "PERSONAL";
 
