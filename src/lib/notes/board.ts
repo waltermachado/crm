@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { PrismaClient } from "@prisma/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import type { AppLocale } from "@/lib/i18n/config";
 import { createLogger } from "@/lib/logger";
@@ -84,67 +85,42 @@ function parseWhiteboardData(value: unknown): NoteWhiteboardData {
 }
 
 async function ensureNoteWorkspaces(
-  prisma: PrismaClient,
+  supabase: SupabaseClient<Database>,
   crmWorkspaceId: string,
   userId: string,
   locale: AppLocale,
 ) {
-  const existing = await prisma.noteWorkspace.findMany({
-    where: {
-      crmWorkspaceId,
-      userId,
-    },
-    select: {
-      id: true,
-      viewType: true,
-    },
-  });
+  const { data: existing } = await supabase
+    .from("NoteWorkspace")
+    .select("id, viewType")
+    .eq("crmWorkspaceId", crmWorkspaceId)
+    .eq("userId", userId);
 
-  const existingTypes = new Set(existing.map((workspace) => workspace.viewType as NoteViewType));
+  const existingTypes = new Set((existing || []).map((workspace) => workspace.viewType as NoteViewType));
   const missingTypes = VIEW_TYPES.filter((viewType) => !existingTypes.has(viewType));
 
   if (missingTypes.length === 0) {
     return;
   }
 
-  await prisma.$transaction(
-    missingTypes.map((viewType) =>
-      prisma.noteWorkspace.create({
-        data: {
-          crmWorkspaceId,
-          userId,
-          viewType,
-          name: getDefaultWorkspaceName(viewType, locale),
-          documentContent: viewType === "DOC" ? DEFAULT_DOCUMENT_CONTENT : null,
-          whiteboardData: viewType === "WHITEBOARD" ? DEFAULT_WHITEBOARD : undefined,
-          columnDefinitions: viewType === "KANBAN" ? DEFAULT_KANBAN_COLUMNS : undefined,
-        },
-      }),
-    ),
-  );
+  const insertData = missingTypes.map((viewType) => ({
+    id: crypto.randomUUID(),
+    crmWorkspaceId,
+    userId,
+    viewType,
+    name: getDefaultWorkspaceName(viewType, locale),
+    documentContent: viewType === "DOC" ? DEFAULT_DOCUMENT_CONTENT : null,
+    whiteboardData: viewType === "WHITEBOARD" ? DEFAULT_WHITEBOARD : null,
+    columnDefinitions: viewType === "KANBAN" ? DEFAULT_KANBAN_COLUMNS : null,
+    updatedAt: new Date().toISOString()
+  }));
+
+  const { error } = await supabase.from("NoteWorkspace").insert(insertData as any);
+  if (error) throw error;
 }
 
 function mapWorkspaceRecord(
-  workspace: {
-    id: string;
-    name: string;
-    viewType: NoteViewType;
-    documentContent: string | null;
-    whiteboardData: unknown;
-    columnDefinitions: unknown;
-    createdAt: Date;
-    updatedAt: Date;
-    noteCards: Array<{
-      id: string;
-      title: string;
-      content: string | null;
-      color: string | null;
-      columnName: string | null;
-      order: number;
-      createdAt: Date;
-      updatedAt: Date;
-    }>;
-  },
+  workspace: any,
   locale: AppLocale,
 ): NoteWorkspaceRecord {
   const viewType = workspace.viewType as NoteViewType;
@@ -155,24 +131,24 @@ function mapWorkspaceRecord(
     name: workspace.name,
     viewType,
     description: getWorkspaceDescription(viewType, locale),
-    cards: workspace.noteCards
+    cards: (workspace.noteCards || [])
       .slice()
-      .sort((left, right) => left.order - right.order)
-      .map((card) => ({
+      .sort((left: any, right: any) => left.order - right.order)
+      .map((card: any) => ({
         id: card.id,
         title: card.title,
         content: card.content ?? "",
         color: card.color ?? "#fff7d6",
         columnName: card.columnName,
         order: card.order,
-        createdAt: card.createdAt.toISOString(),
-        updatedAt: card.updatedAt.toISOString(),
+        createdAt: typeof card.createdAt === 'string' ? card.createdAt : card.createdAt.toISOString(),
+        updatedAt: typeof card.updatedAt === 'string' ? card.updatedAt : card.updatedAt.toISOString(),
       })),
     columns: viewType === "KANBAN" ? (columns.length > 0 ? columns : DEFAULT_KANBAN_COLUMNS) : [],
     documentContent: workspace.documentContent ?? "",
     whiteboard: parseWhiteboardData(workspace.whiteboardData),
-    createdAt: workspace.createdAt.toISOString(),
-    updatedAt: workspace.updatedAt.toISOString(),
+    createdAt: typeof workspace.createdAt === 'string' ? workspace.createdAt : workspace.createdAt.toISOString(),
+    updatedAt: typeof workspace.updatedAt === 'string' ? workspace.updatedAt : workspace.updatedAt.toISOString(),
   };
 }
 
@@ -182,25 +158,21 @@ export async function getNotesSnapshot(locale: AppLocale): Promise<NotesSnapshot
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
 
-    await ensureNoteWorkspaces(prisma, context.workspaceId, context.actor.userId, locale);
+    await ensureNoteWorkspaces(supabase, context.workspaceId, context.actor.userId, locale);
 
-    const workspaces = await prisma.noteWorkspace.findMany({
-      where: {
-        crmWorkspaceId: context.workspaceId,
-        userId: context.actor.userId,
-      },
-      include: {
-        noteCards: {
-          orderBy: [{ columnName: "asc" }, { order: "asc" }, { createdAt: "asc" }],
-        },
-      },
-    });
+    const { data: workspaces, error } = await supabase
+      .from("NoteWorkspace")
+      .select("*, noteCards:NoteCard(*)")
+      .eq("crmWorkspaceId", context.workspaceId)
+      .eq("userId", context.actor.userId);
+
+    if (error) throw error;
 
     const mapped = Object.fromEntries(
-      workspaces.map((workspace) => [
+      (workspaces || []).map((workspace) => [
         workspace.viewType,
         mapWorkspaceRecord(workspace, locale),
       ]),

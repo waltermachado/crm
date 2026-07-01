@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getCalendarContext } from "@/lib/calendar/context";
 import {
   exchangeGoogleAuthCode,
@@ -52,18 +52,19 @@ export async function GET(request: NextRequest) {
       getGooglePrimaryCalendar(tokenResponse.access_token),
     ]);
 
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
 
-    await prisma.integrationAccount.upsert({
-      where: {
-        provider_userId_externalCalendarId: {
-          provider: "GOOGLE",
-          userId: context.actor.userId,
-          externalCalendarId: primaryCalendar.id,
-        },
-      },
-      update: {
+    const { data: existing } = await supabase
+      .from("IntegrationAccount")
+      .select("id")
+      .eq("provider", "GOOGLE")
+      .eq("userId", context.actor.userId)
+      .eq("externalCalendarId", primaryCalendar.id)
+      .maybeSingle();
+
+    if (existing) {
+      await supabase.from("IntegrationAccount").update({
         membershipId: context.actor.id,
         calendarName: primaryCalendar.summary ?? "Google Calendar",
         providerAccountEmail: user.email ?? null,
@@ -72,7 +73,7 @@ export async function GET(request: NextRequest) {
           ? encryptSecret(tokenResponse.refresh_token)
           : undefined,
         expiresAt: tokenResponse.expires_in
-          ? new Date(Date.now() + tokenResponse.expires_in * 1000)
+          ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
           : null,
         isActive: true,
         settings: {
@@ -80,9 +81,12 @@ export async function GET(request: NextRequest) {
           providerName: user.name ?? null,
           primary: primaryCalendar.primary ?? false,
           timeZone: primaryCalendar.timeZone ?? null,
-        },
-      },
-      create: {
+        } as any,
+        updatedAt: new Date().toISOString()
+      }).eq("id", existing.id);
+    } else {
+      await supabase.from("IntegrationAccount").insert({
+        id: crypto.randomUUID(),
         workspaceId: context.workspaceId,
         membershipId: context.actor.id,
         userId: context.actor.userId,
@@ -94,7 +98,7 @@ export async function GET(request: NextRequest) {
           ? encryptSecret(tokenResponse.refresh_token)
           : null,
         expiresAt: tokenResponse.expires_in
-          ? new Date(Date.now() + tokenResponse.expires_in * 1000)
+          ? new Date(Date.now() + tokenResponse.expires_in * 1000).toISOString()
           : null,
         externalCalendarId: primaryCalendar.id,
         settings: {
@@ -102,9 +106,10 @@ export async function GET(request: NextRequest) {
           providerName: user.name ?? null,
           primary: primaryCalendar.primary ?? false,
           timeZone: primaryCalendar.timeZone ?? null,
-        },
-      },
-    });
+        } as any,
+        updatedAt: new Date().toISOString()
+      });
+    }
 
     const response = NextResponse.redirect(buildRedirectUrl(request, returnTo, "connected"));
     response.cookies.delete("oslernotes-google-oauth-state");

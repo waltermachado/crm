@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { Membership, PipelineStage, PrismaClient } from "@prisma/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
 import { getDemoPipelineSnapshot } from "@/lib/deals/demo-store";
@@ -21,6 +22,10 @@ import type {
 import type { AppLocale } from "@/lib/i18n/config";
 import { formatCurrencyFromCents } from "@/lib/utils/format";
 
+type Deal = Database["public"]["Tables"]["Deal"]["Row"];
+type PipelineStage = Database["public"]["Tables"]["PipelineStage"]["Row"];
+type Membership = Database["public"]["Tables"]["Membership"]["Row"];
+
 const logger = createLogger("deals-board");
 
 type PipelineContext = {
@@ -30,7 +35,7 @@ type PipelineContext = {
   actor: DealOwnerSummary;
 };
 
-function formatExpectedClose(expectedCloseAt: Date | null, locale: AppLocale) {
+function formatExpectedClose(expectedCloseAt: string | null, locale: AppLocale) {
   if (!expectedCloseAt) {
     return locale === "pt-BR" ? "Sem previsão" : "No forecast";
   }
@@ -39,7 +44,7 @@ function formatExpectedClose(expectedCloseAt: Date | null, locale: AppLocale) {
     day: "2-digit",
     month: "short",
     year: "numeric",
-  }).format(expectedCloseAt);
+  }).format(new Date(expectedCloseAt));
 }
 
 function buildStageColorClass(slug: string, colorToken: string | null) {
@@ -54,17 +59,7 @@ function buildStageColorClass(slug: string, colorToken: string | null) {
 }
 
 function mapDealDetails(
-  deal: {
-    id: string;
-    name: string;
-    description: string | null;
-    valueCents: bigint;
-    expectedCloseAt: Date | null;
-    stageId: string | null;
-    pipelineId: string | null;
-    position: number;
-    createdAt: Date;
-    updatedAt: Date;
+  deal: Deal & {
     stageRecord: { slug: string } | null;
     company: { name: string } | null;
     contact: { fullName: string; phone: string | null } | null;
@@ -87,119 +82,143 @@ function mapDealDetails(
       email: deal.ownerMembership?.email ?? DEFAULT_ACTOR.email,
     },
     value,
-    displayValue: formatCurrencyFromCents(deal.valueCents, locale),
-    expectedCloseAt: deal.expectedCloseAt?.toISOString() ?? null,
+    displayValue: formatCurrencyFromCents(Number(deal.valueCents), locale),
+    expectedCloseAt: deal.expectedCloseAt ?? null,
     expectedCloseLabel: formatExpectedClose(deal.expectedCloseAt, locale),
     stageId: deal.stageId ?? "",
     stageSlug: (deal.stageRecord?.slug as PipelineStageSlug | undefined) ?? "NOVO_LEAD",
     pipelineId: deal.pipelineId ?? "",
     position: deal.position,
-    createdAt: deal.createdAt.toISOString(),
-    updatedAt: deal.updatedAt.toISOString(),
+    createdAt: deal.createdAt,
+    updatedAt: deal.updatedAt,
   };
 }
 
-async function ensureWorkspace(prisma: PrismaClient) {
-  const existing = await prisma.workspace.findFirst({
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
+async function ensureWorkspace(supabase: SupabaseClient<Database>) {
+  const { data: existing } = await supabase
+    .from("Workspace")
+    .select("*")
+    .order("createdAt", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   if (existing) {
     return existing;
   }
 
-  return prisma.workspace.create({
-    data: {
+  const { data: created, error } = await supabase
+    .from("Workspace")
+    .insert({
       id: DEFAULT_WORKSPACE_ID,
       name: "OslerNotes CRM",
       slug: "oslernotes-crm",
-    },
-  });
+      updatedAt: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return created;
 }
 
-async function ensureActor(prisma: PrismaClient, workspaceId: string): Promise<Membership> {
-  const existing = await prisma.membership.findFirst({
-    where: {
-      workspaceId,
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
+async function ensureActor(supabase: SupabaseClient<Database>, workspaceId: string): Promise<Membership> {
+  const { data: existing } = await supabase
+    .from("Membership")
+    .select("*")
+    .eq("workspaceId", workspaceId)
+    .order("createdAt", { ascending: true })
+    .limit(1)
+    .maybeSingle();
 
   if (existing) {
     return existing;
   }
 
-  return prisma.membership.create({
-    data: {
+  const { data: created, error } = await supabase
+    .from("Membership")
+    .insert({
+      id: crypto.randomUUID(),
       workspaceId,
       userId: DEFAULT_ACTOR.id,
       email: DEFAULT_ACTOR.email,
       fullName: DEFAULT_ACTOR.name,
       role: "admin",
-    },
-  });
+      updatedAt: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return created;
 }
 
-async function ensureDefaultPipeline(prisma: PrismaClient, workspaceId: string) {
-  const existing = await prisma.pipeline.findFirst({
-    where: {
-      workspaceId,
-      isDefault: true,
-    },
-    include: {
-      stages: {
-        orderBy: {
-          position: "asc",
-        },
-      },
-    },
-  });
+async function ensureDefaultPipeline(supabase: SupabaseClient<Database>, workspaceId: string) {
+  const { data: existing } = await supabase
+    .from("Pipeline")
+    .select(`
+      *,
+      stages:PipelineStage(*)
+    `)
+    .eq("workspaceId", workspaceId)
+    .eq("isDefault", true)
+    .limit(1)
+    .maybeSingle();
 
   if (existing) {
+    existing.stages.sort((a, b) => a.position - b.position);
     return existing;
   }
 
-  return prisma.pipeline.create({
-    data: {
+  const { data: pipeline, error: pipeError } = await supabase
+    .from("Pipeline")
+    .insert({
+      id: crypto.randomUUID(),
       workspaceId,
       name: DEFAULT_PIPELINE_NAME,
       isDefault: true,
-      stages: {
-        create: DEFAULT_PIPELINE_STAGES.map((stage) => ({
-          workspaceId,
-          name: stage.name,
-          slug: stage.slug,
-          position: stage.order,
-          colorToken: stage.colorClassName,
-          isClosedWon: stage.isClosedWon ?? false,
-          isClosedLost: stage.isClosedLost ?? false,
-        })),
-      },
-    },
-    include: {
-      stages: {
-        orderBy: {
-          position: "asc",
-        },
-      },
-    },
-  });
+      updatedAt: new Date().toISOString(),
+    })
+    .select()
+    .single();
+
+  if (pipeError) throw pipeError;
+
+  const stagesToInsert = DEFAULT_PIPELINE_STAGES.map((stage) => ({
+    id: crypto.randomUUID(),
+    workspaceId,
+    pipelineId: pipeline.id,
+    name: stage.name,
+    slug: stage.slug,
+    position: stage.order,
+    colorToken: stage.colorClassName,
+    isClosedWon: stage.isClosedWon ?? false,
+    isClosedLost: stage.isClosedLost ?? false,
+    updatedAt: new Date().toISOString(),
+  }));
+
+  const { data: stages, error: stagesError } = await supabase
+    .from("PipelineStage")
+    .insert(stagesToInsert)
+    .select();
+
+  if (stagesError) throw stagesError;
+
+  return {
+    ...pipeline,
+    stages: stages.sort((a, b) => a.position - b.position),
+  };
 }
 
 export async function getOrCreatePipelineContext(
-  prisma = getPrismaClient(),
+  supabase = supabaseAdmin,
 ): Promise<PipelineContext | null> {
   if (!hasDatabaseConfig()) {
     return null;
   }
 
-  const workspace = await ensureWorkspace(prisma);
-  const actor = await ensureActor(prisma, workspace.id);
-  const pipeline = await ensureDefaultPipeline(prisma, workspace.id);
+  const workspace = await ensureWorkspace(supabase);
+  const actor = await ensureActor(supabase, workspace.id);
+  const pipeline = await ensureDefaultPipeline(supabase, workspace.id);
 
   return {
     workspaceId: workspace.id,
@@ -227,35 +246,44 @@ export async function getDealsBoardSnapshot(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getOrCreatePipelineContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getOrCreatePipelineContext(supabase);
 
     if (!context) {
       return getDemoPipelineSnapshot(locale);
     }
 
-    const [deals, owners] = await Promise.all([
-      prisma.deal.findMany({
-        where: {
-          pipelineId: context.pipelineId,
-        },
-        include: {
-          stageRecord: true,
-          company: true,
-          contact: true,
-          ownerMembership: true,
-        },
-        orderBy: [{ stageRecord: { position: "asc" } }, { position: "asc" }],
-      }),
-      prisma.membership.findMany({
-        where: {
-          workspaceId: context.workspaceId,
-        },
-        orderBy: {
-          fullName: "asc",
-        },
-      }),
+    const [dealsResult, ownersResult] = await Promise.all([
+      supabase
+        .from("Deal")
+        .select(`
+          *,
+          stageRecord:PipelineStage(*),
+          company:Company(*),
+          contact:Contact(*),
+          ownerMembership:Membership(*)
+        `)
+        .eq("pipelineId", context.pipelineId),
+      supabase
+        .from("Membership")
+        .select("*")
+        .eq("workspaceId", context.workspaceId)
+        .order("fullName", { ascending: true }),
     ]);
+
+    if (dealsResult.error) throw dealsResult.error;
+    if (ownersResult.error) throw ownersResult.error;
+
+    const deals = dealsResult.data as any[];
+    
+    // sorting logic originally from prisma orderby
+    deals.sort((a, b) => {
+      const stageDiff = (a.stageRecord?.position ?? 0) - (b.stageRecord?.position ?? 0);
+      if (stageDiff !== 0) return stageDiff;
+      return a.position - b.position;
+    });
+
+    const owners = ownersResult.data;
 
     const dealsById = Object.fromEntries(
       deals.map((deal) => [deal.id, mapDealDetails(deal, locale)]),

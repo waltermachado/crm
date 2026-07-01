@@ -1,4 +1,6 @@
-import type { DealStage } from "@prisma/client";
+import type { Database } from "@/types/database";
+
+type DealStage = Database["public"]["Enums"]["DealStage"];
 
 import type { PipelineStageSlug } from "@/types/deals";
 

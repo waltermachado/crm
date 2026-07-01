@@ -1,8 +1,9 @@
 import "server-only";
 
-import type { IntegrationProvider } from "@prisma/client";
+import type { Database } from "@/types/database";
+type IntegrationProvider = Database["public"]["Enums"]["IntegrationProvider"];
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getDemoCalendarSnapshot } from "@/lib/calendar/demo-store";
 import { getCalendarContext } from "@/lib/calendar/context";
 import { OSLERNOTES_CALENDAR_ID, CALENDAR_EVENT_TYPE_META, CALENDAR_PROVIDER_META } from "@/lib/calendar/constants";
@@ -43,57 +44,45 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
     const now = new Date();
     const rangeStartDate = addDays(startOfDay(now), -14);
     const rangeEndDate = addDays(startOfDay(now), 45);
 
-    const [integrationAccounts, events, contacts, deals] = await Promise.all([
-      prisma.integrationAccount.findMany({
-        where: {
-          workspaceId: context.workspaceId,
-        },
-        orderBy: [{ provider: "asc" }, { createdAt: "asc" }],
-      }),
-      prisma.calendarEvent.findMany({
-        where: {
-          workspaceId: context.workspaceId,
-          startDatetime: {
-            gte: rangeStartDate,
-            lte: rangeEndDate,
-          },
-        },
-        include: {
-          integrationAccount: true,
-          contact: true,
-          deal: true,
-          ownerMembership: true,
-        },
-        orderBy: [{ startDatetime: "asc" }, { endDatetime: "asc" }],
-      }),
-      prisma.contact.findMany({
-        where: {
-          workspaceId: context.workspaceId,
-        },
-        orderBy: {
-          fullName: "asc",
-        },
-        take: 100,
-      }),
-      prisma.deal.findMany({
-        where: {
-          workspaceId: context.workspaceId,
-        },
-        include: {
-          company: true,
-        },
-        orderBy: {
-          updatedAt: "desc",
-        },
-        take: 100,
-      }),
+    const [{ data: integrationAccountsData }, { data: eventsData }, { data: contactsData }, { data: dealsData }] = await Promise.all([
+      supabase
+        .from("IntegrationAccount")
+        .select("*")
+        .eq("workspaceId", context.workspaceId)
+        .order("provider", { ascending: true })
+        .order("createdAt", { ascending: true }),
+      supabase
+        .from("CalendarEvent")
+        .select("*, integrationAccount:IntegrationAccount(*), contact:Contact(*), deal:Deal(*), ownerMembership:Membership(*)")
+        .eq("workspaceId", context.workspaceId)
+        .gte("startDatetime", rangeStartDate.toISOString())
+        .lte("startDatetime", rangeEndDate.toISOString())
+        .order("startDatetime", { ascending: true })
+        .order("endDatetime", { ascending: true }),
+      supabase
+        .from("Contact")
+        .select("*")
+        .eq("workspaceId", context.workspaceId)
+        .order("fullName", { ascending: true })
+        .limit(100),
+      supabase
+        .from("Deal")
+        .select("*, company:Company(*)")
+        .eq("workspaceId", context.workspaceId)
+        .order("updatedAt", { ascending: false })
+        .limit(100),
     ]);
+    
+    const integrationAccounts = integrationAccountsData || [];
+    const events = eventsData || [];
+    const contacts = contactsData || [];
+    const deals = dealsData || [];
 
     const mappedConnections: CalendarConnectionRecord[] = [
       {
@@ -116,7 +105,7 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
         isConnected: account.isActive,
         externalCalendarId: account.externalCalendarId,
         syncToken: account.syncToken,
-        lastSyncedAt: account.updatedAt.toISOString(),
+        lastSyncedAt: account.updatedAt,
       })),
     ];
 
@@ -150,8 +139,8 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
           title: event.title,
           description: event.description,
           location: event.location,
-          startDatetime: event.startDatetime.toISOString(),
-          endDatetime: event.endDatetime.toISOString(),
+          startDatetime: event.startDatetime,
+          endDatetime: event.endDatetime,
           isAllDay: event.isAllDay,
           eventType: event.eventType,
           sourceCalendarId: event.integrationAccountId ?? OSLERNOTES_CALENDAR_ID,
@@ -159,7 +148,7 @@ export async function getCalendarSnapshot(locale: AppLocale): Promise<CalendarSn
           sourceLabel: event.integrationAccount?.calendarName ?? "OslerNotes CRM",
           sourceColorClassName: CALENDAR_PROVIDER_META[provider].colorClassName,
           externalEventId: event.externalEventId,
-          lastSyncedAt: event.lastSyncedAt?.toISOString() ?? null,
+          lastSyncedAt: event.lastSyncedAt ?? null,
           contactId: event.contactId,
           contactLabel: event.contact?.fullName ?? null,
           dealId: event.dealId,

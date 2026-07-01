@@ -1,6 +1,7 @@
 import "server-only";
 
-import type { PrismaClient } from "@prisma/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 import { AppError } from "@/lib/errors/app-error";
 import { getServerEnv } from "@/lib/env/server";
@@ -179,16 +180,18 @@ export async function getGooglePrimaryCalendar(accessToken: string) {
 }
 
 export async function getValidGoogleAccessToken(input: {
-  prisma: PrismaClient;
+  supabase: SupabaseClient<Database>;
   integrationAccount: {
     id: string;
     accessToken: string | null;
     refreshToken: string | null;
-    expiresAt: Date | null;
+    expiresAt: string | Date | null;
   };
 }) {
   const now = Date.now();
-  const expiresAt = input.integrationAccount.expiresAt?.getTime() ?? 0;
+  const expiresAt = input.integrationAccount.expiresAt
+    ? new Date(input.integrationAccount.expiresAt).getTime()
+    : 0;
   const accessToken =
     input.integrationAccount.accessToken ? decryptSecret(input.integrationAccount.accessToken) : null;
 
@@ -207,17 +210,13 @@ export async function getValidGoogleAccessToken(input: {
     refreshToken: decryptSecret(input.integrationAccount.refreshToken),
   });
 
-  await input.prisma.integrationAccount.update({
-    where: {
-      id: input.integrationAccount.id,
-    },
-    data: {
-      accessToken: encryptSecret(refreshed.access_token),
-      expiresAt: refreshed.expires_in
-        ? new Date(Date.now() + refreshed.expires_in * 1000)
-        : null,
-    },
-  });
+  await input.supabase.from("IntegrationAccount").update({
+    accessToken: encryptSecret(refreshed.access_token),
+    expiresAt: refreshed.expires_in
+      ? new Date(Date.now() + refreshed.expires_in * 1000).toISOString()
+      : null,
+    updatedAt: new Date().toISOString()
+  }).eq("id", input.integrationAccount.id);
 
   logger.info("Google access token refreshed.", {
     integrationAccountId: input.integrationAccount.id,

@@ -1,7 +1,9 @@
 import "server-only";
 
-import { Prisma, type DealEventType, type PrismaClient } from "@prisma/client";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
+type DealEventType = Database["public"]["Enums"]["DealEventType"];
 import { getServerEnv } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
 import type { DealMovedEventPayload, DealOwnerSummary, PipelineStageSlug } from "@/types/deals";
@@ -14,7 +16,7 @@ type EventActor = {
 };
 
 type EventInput = {
-  prisma?: PrismaClient | Prisma.TransactionClient;
+  supabase?: SupabaseClient<Database>;
   workspaceId: string;
   pipelineId?: string | null;
   stageId?: string | null;
@@ -104,20 +106,19 @@ export async function emitDealEvent(input: EventInput) {
 
   const delivery = await postWebhook(payload);
 
-  if (input.prisma) {
-    await input.prisma.dealEventLog.create({
-      data: {
-        workspaceId: input.workspaceId,
-        pipelineId: input.pipelineId ?? null,
-        stageId: input.stageId ?? null,
-        dealId: input.dealId ?? null,
-        actorMembershipId: input.actor?.id ?? null,
-        eventType: input.type,
-        payload: payload as Prisma.InputJsonValue,
-        webhookUrl: delivery.webhookUrl,
-        responseStatus: delivery.responseStatus,
-        deliveredAt: delivery.deliveredAt,
-      },
+  if (input.supabase) {
+    await input.supabase.from("DealEventLog").insert({
+      id: crypto.randomUUID(),
+      workspaceId: input.workspaceId,
+      pipelineId: input.pipelineId ?? null,
+      stageId: input.stageId ?? null,
+      dealId: input.dealId ?? null,
+      actorMembershipId: input.actor?.id ?? null,
+      eventType: input.type,
+      payload: payload as any,
+      webhookUrl: delivery.webhookUrl,
+      responseStatus: delivery.responseStatus,
+      deliveredAt: delivery.deliveredAt?.toISOString() ?? null,
     });
   }
 

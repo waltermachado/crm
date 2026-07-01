@@ -1,8 +1,8 @@
 import "server-only";
 
-import type { PrismaClient } from "@prisma/client";
-
-import { getPrismaClient } from "@/lib/db/prisma";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getValidGoogleAccessToken, googleCalendarRequest } from "@/lib/calendar/google";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
@@ -14,7 +14,7 @@ type SyncOperation = "create" | "update" | "delete";
 type SyncJobInput = {
   eventId: string;
   operation: SyncOperation;
-  prisma?: PrismaClient;
+  supabase?: SupabaseClient<Database>;
 };
 
 function addOneDay(date: Date) {
@@ -24,25 +24,20 @@ function addOneDay(date: Date) {
 }
 
 async function syncGoogleCalendarEvent(input: SyncJobInput) {
-  const prisma = input.prisma ?? getPrismaClient();
-  const event = await prisma.calendarEvent.findUnique({
-    where: {
-      id: input.eventId,
-    },
-    include: {
-      integrationAccount: true,
-      contact: true,
-      deal: true,
-    },
-  });
+  const supabase = input.supabase ?? supabaseAdmin;
+  const { data: event } = await supabase
+    .from("CalendarEvent")
+    .select("*, integrationAccount:IntegrationAccount(*), contact:Contact(*), deal:Deal(*)")
+    .eq("id", input.eventId)
+    .maybeSingle();
 
   if (!event?.integrationAccount) {
     return;
   }
 
   const accessToken = await getValidGoogleAccessToken({
-    prisma,
-    integrationAccount: event.integrationAccount,
+    supabase,
+    integrationAccount: event.integrationAccount as any,
   });
   const calendarId = encodeURIComponent(event.integrationAccount.externalCalendarId);
   const googlePayload = {
@@ -53,18 +48,18 @@ async function syncGoogleCalendarEvent(input: SyncJobInput) {
     location: event.location ?? undefined,
     start: event.isAllDay
       ? {
-          date: event.startDatetime.toISOString().slice(0, 10),
+          date: new Date(event.startDatetime).toISOString().slice(0, 10),
         }
       : {
-          dateTime: event.startDatetime.toISOString(),
+          dateTime: new Date(event.startDatetime).toISOString(),
           timeZone: "UTC",
         },
     end: event.isAllDay
       ? {
-          date: addOneDay(event.endDatetime).toISOString().slice(0, 10),
+          date: addOneDay(new Date(event.endDatetime)).toISOString().slice(0, 10),
         }
       : {
-          dateTime: event.endDatetime.toISOString(),
+          dateTime: new Date(event.endDatetime).toISOString(),
           timeZone: "UTC",
         },
   };
@@ -99,15 +94,10 @@ async function syncGoogleCalendarEvent(input: SyncJobInput) {
       throw new Error("Google Calendar create response did not include an event id.");
     }
 
-    await prisma.calendarEvent.update({
-      where: {
-        id: event.id,
-      },
-      data: {
-        externalEventId: String(created.id),
-        lastSyncedAt: new Date(),
-      },
-    });
+    await supabase.from("CalendarEvent").update({
+      externalEventId: String(created.id),
+      lastSyncedAt: new Date().toISOString(),
+    }).eq("id", event.id);
 
     logger.info("Google Calendar event created.", {
       eventId: event.id,
@@ -123,14 +113,9 @@ async function syncGoogleCalendarEvent(input: SyncJobInput) {
     body: googlePayload,
   });
 
-  await prisma.calendarEvent.update({
-    where: {
-      id: event.id,
-    },
-    data: {
-      lastSyncedAt: new Date(),
-    },
-  });
+  await supabase.from("CalendarEvent").update({
+    lastSyncedAt: new Date().toISOString(),
+  }).eq("id", event.id);
 
   logger.info("Google Calendar event updated.", {
     eventId: event.id,
@@ -139,15 +124,12 @@ async function syncGoogleCalendarEvent(input: SyncJobInput) {
 }
 
 async function syncAppleCalendarEvent(input: SyncJobInput) {
-  const prisma = input.prisma ?? getPrismaClient();
-  const event = await prisma.calendarEvent.findUnique({
-    where: {
-      id: input.eventId,
-    },
-    include: {
-      integrationAccount: true,
-    },
-  });
+  const supabase = input.supabase ?? supabaseAdmin;
+  const { data: event } = await supabase
+    .from("CalendarEvent")
+    .select("*, integrationAccount:IntegrationAccount(*)")
+    .eq("id", input.eventId)
+    .maybeSingle();
 
   logger.info("Apple Calendar sync placeholder queued.", {
     eventId: input.eventId,
@@ -161,15 +143,12 @@ export async function dispatchCalendarSyncJob(input: SyncJobInput) {
     return;
   }
 
-  const prisma = input.prisma ?? getPrismaClient();
-  const event = await prisma.calendarEvent.findUnique({
-    where: {
-      id: input.eventId,
-    },
-    include: {
-      integrationAccount: true,
-    },
-  });
+  const supabase = input.supabase ?? supabaseAdmin;
+  const { data: event } = await supabase
+    .from("CalendarEvent")
+    .select("*, integrationAccount:IntegrationAccount(*)")
+    .eq("id", input.eventId)
+    .maybeSingle();
 
   if (!event?.integrationAccount) {
     return;
@@ -214,21 +193,21 @@ export async function applyWebhookCalendarChange(input: WebhookUpsertInput) {
     };
   }
 
-  const prisma = getPrismaClient();
+  const supabase = supabaseAdmin;
 
-  const integrationAccount = await prisma.integrationAccount.findFirst({
-    where: {
-      provider: input.provider,
-      ...(input.externalCalendarId
-        ? {
-            externalCalendarId: input.externalCalendarId,
-          }
-        : {}),
-    },
-    orderBy: {
-      createdAt: "asc",
-    },
-  });
+  let query = supabase
+    .from("IntegrationAccount")
+    .select("*")
+    .eq("provider", input.provider)
+    .order("createdAt", { ascending: true })
+    .limit(1);
+
+  if (input.externalCalendarId) {
+    query = query.eq("externalCalendarId", input.externalCalendarId);
+  }
+
+  const { data: accounts } = await query;
+  const integrationAccount = accounts?.[0];
 
   if (!integrationAccount) {
     return {
@@ -237,12 +216,12 @@ export async function applyWebhookCalendarChange(input: WebhookUpsertInput) {
     };
   }
 
-  const existing = await prisma.calendarEvent.findFirst({
-    where: {
-      workspaceId: integrationAccount.workspaceId,
-      externalEventId: input.externalEventId,
-    },
-  });
+  const { data: existing } = await supabase
+    .from("CalendarEvent")
+    .select("*")
+    .eq("workspaceId", integrationAccount.workspaceId)
+    .eq("externalEventId", input.externalEventId)
+    .maybeSingle();
 
   if (!existing) {
     if (!input.event?.startDatetime || !input.event?.endDatetime || !input.event?.title) {
@@ -252,22 +231,22 @@ export async function applyWebhookCalendarChange(input: WebhookUpsertInput) {
       };
     }
 
-    await prisma.calendarEvent.create({
-      data: {
-        workspaceId: integrationAccount.workspaceId,
-        ownerMembershipId: integrationAccount.membershipId,
-        integrationAccountId: integrationAccount.id,
-        userId: integrationAccount.userId,
-        title: input.event.title,
-        description: input.event.description,
-        location: input.event.location,
-        startDatetime: new Date(input.event.startDatetime),
-        endDatetime: new Date(input.event.endDatetime),
-        isAllDay: input.event.isAllDay ?? false,
-        eventType: input.event.eventType ?? "MEETING",
-        externalEventId: input.externalEventId,
-        lastSyncedAt: new Date(),
-      },
+    await supabase.from("CalendarEvent").insert({
+      id: crypto.randomUUID(),
+      workspaceId: integrationAccount.workspaceId,
+      ownerMembershipId: integrationAccount.membershipId,
+      integrationAccountId: integrationAccount.id,
+      userId: integrationAccount.userId,
+      title: input.event.title,
+      description: input.event.description ?? null,
+      location: input.event.location ?? null,
+      startDatetime: new Date(input.event.startDatetime).toISOString(),
+      endDatetime: new Date(input.event.endDatetime).toISOString(),
+      isAllDay: input.event.isAllDay ?? false,
+      eventType: input.event.eventType ?? "MEETING",
+      externalEventId: input.externalEventId,
+      lastSyncedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     });
 
     return {
@@ -276,24 +255,20 @@ export async function applyWebhookCalendarChange(input: WebhookUpsertInput) {
     };
   }
 
-  await prisma.calendarEvent.update({
-    where: {
-      id: existing.id,
-    },
-    data: {
-      title: input.event?.title ?? existing.title,
-      description:
-        input.event?.description === undefined ? existing.description : input.event.description,
-      location: input.event?.location === undefined ? existing.location : input.event.location,
-      startDatetime: input.event?.startDatetime
-        ? new Date(input.event.startDatetime)
-        : existing.startDatetime,
-      endDatetime: input.event?.endDatetime ? new Date(input.event.endDatetime) : existing.endDatetime,
-      isAllDay: input.event?.isAllDay ?? existing.isAllDay,
-      eventType: input.event?.eventType ?? existing.eventType,
-      lastSyncedAt: new Date(),
-    },
-  });
+  await supabase.from("CalendarEvent").update({
+    title: input.event?.title ?? existing.title,
+    description:
+      input.event?.description === undefined ? existing.description : input.event.description,
+    location: input.event?.location === undefined ? existing.location : input.event.location,
+    startDatetime: input.event?.startDatetime
+      ? new Date(input.event.startDatetime).toISOString()
+      : existing.startDatetime,
+    endDatetime: input.event?.endDatetime ? new Date(input.event.endDatetime).toISOString() : existing.endDatetime,
+    isAllDay: input.event?.isAllDay ?? existing.isAllDay,
+    eventType: input.event?.eventType ?? existing.eventType,
+    lastSyncedAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  }).eq("id", existing.id);
 
   return {
     status: "success",

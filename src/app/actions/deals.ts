@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getOrCreatePipelineContext } from "@/lib/deals/board";
 import {
   deleteDemoDeal,
@@ -68,113 +70,144 @@ function normalizeStageSlug(value?: string | null): PipelineStageSlug {
 }
 
 async function resequenceStagePositions({
-  prisma,
+  supabase,
   stageId,
   excludeDealId,
 }: {
-  prisma: ReturnType<typeof getPrismaClient>;
+  supabase: SupabaseClient<Database>;
   stageId: string;
   excludeDealId?: string;
 }) {
-  const deals = await prisma.deal.findMany({
-    where: {
-      stageId,
-      ...(excludeDealId ? { id: { not: excludeDealId } } : {}),
-    },
-    orderBy: {
-      position: "asc",
-    },
-    select: {
-      id: true,
-    },
-  });
+  let query = supabase
+    .from("Deal")
+    .select("id")
+    .eq("stageId", stageId)
+    .order("position", { ascending: true });
+
+  if (excludeDealId) {
+    query = query.neq("id", excludeDealId);
+  }
+
+  const { data: deals } = await query;
+  if (!deals) return;
 
   await Promise.all(
     deals.map((deal, index) =>
-      prisma.deal.update({
-        where: {
-          id: deal.id,
-        },
-        data: {
-          position: index,
-        },
-      }),
-    ),
+      supabase
+        .from("Deal")
+        .update({ position: index })
+        .eq("id", deal.id)
+    )
   );
 }
 
 async function resolveAuxiliaryRelations({
-  prisma,
+  supabase,
   workspaceId,
   ownerId,
   companyName,
   contactName,
   contactPhone,
 }: {
-  prisma: ReturnType<typeof getPrismaClient>;
+  supabase: SupabaseClient<Database>;
   workspaceId: string;
   ownerId: string;
   companyName: string;
   contactName?: string;
   contactPhone?: string;
 }) {
-  const owner = await prisma.membership.findFirst({
-    where: {
-      id: ownerId,
-      workspaceId,
-    },
-  });
+  const { data: owner } = await supabase
+    .from("Membership")
+    .select("*")
+    .eq("id", ownerId)
+    .eq("workspaceId", workspaceId)
+    .maybeSingle();
 
-  const fallbackOwner =
-    owner ??
-    (await prisma.membership.findFirst({
-      where: {
+  let fallbackOwner = owner;
+  if (!fallbackOwner) {
+    const { data: firstOwner } = await supabase
+      .from("Membership")
+      .select("*")
+      .eq("workspaceId", workspaceId)
+      .order("createdAt", { ascending: true })
+      .limit(1)
+      .single();
+    fallbackOwner = firstOwner;
+  }
+
+  const companyId = `${workspaceId}-${companyName.toLowerCase().replace(/\s+/g, "-")}`;
+  const { data: existingCompany } = await supabase
+    .from("Company")
+    .select("*")
+    .eq("id", companyId)
+    .maybeSingle();
+
+  let company;
+  if (existingCompany) {
+    const { data: updatedCompany } = await supabase
+      .from("Company")
+      .update({ name: companyName, updatedAt: new Date().toISOString() })
+      .eq("id", companyId)
+      .select()
+      .single();
+    company = updatedCompany;
+  } else {
+    const { data: createdCompany } = await supabase
+      .from("Company")
+      .insert({
+        id: companyId,
         workspaceId,
-      },
-      orderBy: {
-        createdAt: "asc",
-      },
-    }));
+        name: companyName,
+        updatedAt: new Date().toISOString()
+      })
+      .select()
+      .single();
+    company = createdCompany;
+  }
 
-  const company = await prisma.company.upsert({
-    where: {
-      id: `${workspaceId}-${companyName.toLowerCase().replace(/\s+/g, "-")}`,
-    },
-    update: {
-      name: companyName,
-    },
-    create: {
-      id: `${workspaceId}-${companyName.toLowerCase().replace(/\s+/g, "-")}`,
-      workspaceId,
-      name: companyName,
-    },
-  });
+  let contact = null;
+  if (contactName && contactName.trim().length > 0) {
+    const contactId = `${workspaceId}-${contactName.toLowerCase().replace(/\s+/g, "-")}`;
+    const { data: existingContact } = await supabase
+      .from("Contact")
+      .select("*")
+      .eq("id", contactId)
+      .maybeSingle();
 
-  const contact =
-    contactName && contactName.trim().length > 0
-      ? await prisma.contact.upsert({
-          where: {
-            id: `${workspaceId}-${contactName.toLowerCase().replace(/\s+/g, "-")}`,
-          },
-          update: {
-            fullName: contactName,
-            phone: contactPhone || null,
-            companyId: company.id,
-          },
-          create: {
-            id: `${workspaceId}-${contactName.toLowerCase().replace(/\s+/g, "-")}`,
-            workspaceId,
-            companyId: company.id,
-            fullName: contactName,
-            phone: contactPhone || null,
-            ownerMembershipId: fallbackOwner?.id ?? null,
-          },
+    if (existingContact) {
+      const { data: updatedContact } = await supabase
+        .from("Contact")
+        .update({
+          fullName: contactName,
+          phone: contactPhone || null,
+          companyId: company!.id,
+          updatedAt: new Date().toISOString(),
         })
-      : null;
+        .eq("id", contactId)
+        .select()
+        .single();
+      contact = updatedContact;
+    } else {
+      const { data: createdContact } = await supabase
+        .from("Contact")
+        .insert({
+          id: contactId,
+          workspaceId,
+          companyId: company!.id,
+          fullName: contactName,
+          phone: contactPhone || null,
+          ownerMembershipId: fallbackOwner?.id ?? null,
+          updatedAt: new Date().toISOString(),
+        })
+        .select()
+        .single();
+      contact = createdContact;
+    }
+  }
 
   return {
     owner: fallbackOwner,
-    company,
+    company: company!,
     contact,
   };
 }
@@ -242,23 +275,20 @@ export async function moveDealAction(input: DealMoveInput): Promise<DealActionRe
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getOrCreatePipelineContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getOrCreatePipelineContext(supabase);
 
     if (!context) {
       throw new Error("Pipeline context unavailable.");
     }
 
     const stageMeta = getStageMetaById(parsed.targetStageId);
-    const deal = await prisma.deal.findUnique({
-      where: {
-        id: parsed.dealId,
-      },
-      include: {
-        ownerMembership: true,
-        stageRecord: true,
-      },
-    });
+    
+    const { data: deal } = await supabase
+      .from("Deal")
+      .select("*, ownerMembership:Membership(*), stageRecord:PipelineStage(*)")
+      .eq("id", parsed.dealId)
+      .maybeSingle();
 
     if (!deal || !stageMeta) {
       throw new Error("Deal or target stage not found.");
@@ -266,35 +296,23 @@ export async function moveDealAction(input: DealMoveInput): Promise<DealActionRe
 
     const isStageChange = parsed.sourceStageId !== parsed.targetStageId;
 
-    const sourceDeals = await prisma.deal.findMany({
-      where: {
-        stageId: parsed.sourceStageId,
-        id: {
-          not: parsed.dealId,
-        },
-      },
-      orderBy: {
-        position: "asc",
-      },
-      select: {
-        id: true,
-      },
-    });
+    const { data: sourceDealsData } = await supabase
+      .from("Deal")
+      .select("id")
+      .eq("stageId", parsed.sourceStageId)
+      .neq("id", parsed.dealId)
+      .order("position", { ascending: true });
+    
+    const sourceDeals = sourceDealsData || [];
 
-    const targetDeals = await prisma.deal.findMany({
-      where: {
-        stageId: parsed.targetStageId,
-        id: {
-          not: parsed.dealId,
-        },
-      },
-      orderBy: {
-        position: "asc",
-      },
-      select: {
-        id: true,
-      },
-    });
+    const { data: targetDealsData } = await supabase
+      .from("Deal")
+      .select("id")
+      .eq("stageId", parsed.targetStageId)
+      .neq("id", parsed.dealId)
+      .order("position", { ascending: true });
+
+    const targetDeals = targetDealsData || [];
 
     const normalizedTargetIndex = normalizeDealMoveTargetIndex({
       sourceStageId: parsed.sourceStageId,
@@ -303,10 +321,6 @@ export async function moveDealAction(input: DealMoveInput): Promise<DealActionRe
       targetIndex: parsed.targetIndex,
       targetLength: targetDeals.length,
     });
-
-    // #region debug-point E:server-action-db-computed
-    fetch("http://127.0.0.1:7778/event",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({sessionId:"kanban-reorder",runId:"pre-fix",hypothesisId:"E",location:"actions/deals.ts:moveDealAction:db",msg:"[DEBUG] move action db computed",data:{isStageChange,sourceDeals:sourceDeals.map((entry)=>entry.id),targetDeals:targetDeals.map((entry)=>entry.id),normalizedTargetIndex},ts:Date.now()})}).catch(()=>{});
-    // #endregion
 
     if (!isStageChange && parsed.sourceIndex === normalizedTargetIndex) {
       return {
@@ -318,93 +332,57 @@ export async function moveDealAction(input: DealMoveInput): Promise<DealActionRe
     const nextTarget = [...targetDeals];
     nextTarget.splice(normalizedTargetIndex, 0, { id: parsed.dealId });
 
-    await prisma.$transaction(async (tx) => {
-      if (isStageChange) {
-        await Promise.all(
-          sourceDeals.map((entry, index) =>
-            tx.deal.update({
-              where: {
-                id: entry.id,
-              },
-              data: {
-                position: index,
-              },
-            }),
-          ),
-        );
-      }
+    const sourceUpdates = sourceDeals.map((entry, index) => ({ id: entry.id, position: index }));
+    const targetUpdates = nextTarget.map((entry, index) => ({ id: entry.id, position: index }));
+    
+    const durationInPreviousStageSeconds = deal.enteredStageAt 
+      ? Math.max(0, Math.floor((Date.now() - new Date(deal.enteredStageAt).getTime()) / 1000))
+      : 0;
 
-      await Promise.all(
-        nextTarget.map((entry, index) =>
-          tx.deal.update({
-            where: {
-              id: entry.id,
-            },
-            data:
-              entry.id === parsed.dealId
-                ? isStageChange
-                  ? {
-                      position: index,
-                      stageId: parsed.targetStageId,
-                      stage: stageMeta.stageEnum,
-                      enteredStageAt: new Date(),
-                    }
-                  : {
-                      position: index,
-                    }
-                : {
-                    position: index,
-                  },
-          }),
-        ),
-      );
-
-      if (isStageChange) {
-        const durationInPreviousStageSeconds = Math.max(
-          0,
-          Math.floor((Date.now() - deal.enteredStageAt.getTime()) / 1000),
-        );
-
-        await tx.dealStageTransition.create({
-          data: {
-            workspaceId: context.workspaceId,
-            dealId: deal.id,
-            actorMembershipId: deal.ownerMembershipId,
-            fromStageId: deal.stageId,
-            toStageId: parsed.targetStageId,
-            durationInPreviousStageSeconds,
-          },
-        });
-
-        await emitDealEvent({
-          prisma: tx,
-          workspaceId: context.workspaceId,
-          pipelineId: context.pipelineId,
-          stageId: parsed.targetStageId,
-          dealId: deal.id,
-          actor: deal.ownerMembership
-            ? {
-                id: deal.ownerMembership.id,
-                name: deal.ownerMembership.fullName,
-                email: deal.ownerMembership.email,
-              }
-            : context.actor,
-          type: "DEAL_MOVED",
-          payload: buildDealMovedPayload({
-            actor: {
-              id: deal.ownerMembership?.id ?? context.actor.id,
-              name: deal.ownerMembership?.fullName ?? context.actor.name,
-            },
-            dealId: deal.id,
-            title: deal.name,
-            value: Number(deal.valueCents) / 100,
-            fromStage: normalizeStageSlug(deal.stageRecord?.slug),
-            toStage: stageMeta.slug,
-            durationInPreviousStageSeconds,
-          }).data,
-        });
-      }
+    const { error: rpcError } = await supabase.rpc("rpc_move_deal", {
+      p_deal_id: deal.id,
+      p_old_stage_id: deal.stageId!,
+      p_new_stage_id: parsed.targetStageId,
+      p_new_stage_enum: stageMeta.stageEnum,
+      p_is_stage_change: isStageChange,
+      p_workspace_id: context.workspaceId,
+      p_actor_membership_id: (deal.ownerMembershipId ?? null) as unknown as string,
+      p_duration_in_previous_stage_seconds: durationInPreviousStageSeconds,
+      p_source_updates: sourceUpdates as any,
+      p_target_updates: targetUpdates as any
     });
+
+    if (rpcError) throw rpcError;
+
+    if (isStageChange) {
+      await emitDealEvent({
+        supabase,
+        workspaceId: context.workspaceId,
+        pipelineId: context.pipelineId,
+        stageId: parsed.targetStageId,
+        dealId: deal.id,
+        actor: deal.ownerMembership
+          ? {
+              id: deal.ownerMembership.id,
+              name: deal.ownerMembership.fullName,
+              email: deal.ownerMembership.email,
+            }
+          : context.actor,
+        type: "DEAL_MOVED",
+        payload: buildDealMovedPayload({
+          actor: {
+            id: deal.ownerMembership?.id ?? context.actor.id,
+            name: deal.ownerMembership?.fullName ?? context.actor.name,
+          },
+          dealId: deal.id,
+          title: deal.name,
+          value: Number(deal.valueCents) / 100,
+          fromStage: normalizeStageSlug(deal.stageRecord?.slug),
+          toStage: stageMeta.slug,
+          durationInPreviousStageSeconds,
+        }).data,
+      });
+    }
 
     revalidatePath("/deals");
 
@@ -501,8 +479,8 @@ export async function saveDealAction(input: SaveDealInput): Promise<DealActionRe
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getOrCreatePipelineContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getOrCreatePipelineContext(supabase);
 
     if (!context) {
       throw new Error("Pipeline context unavailable.");
@@ -515,7 +493,7 @@ export async function saveDealAction(input: SaveDealInput): Promise<DealActionRe
     }
 
     const relations = await resolveAuxiliaryRelations({
-      prisma,
+      supabase,
       workspaceId: context.workspaceId,
       ownerId: parsed.ownerId,
       companyName: parsed.companyName,
@@ -523,95 +501,87 @@ export async function saveDealAction(input: SaveDealInput): Promise<DealActionRe
       contactPhone: parsed.contactPhone,
     });
 
-    const existing = parsed.id
-      ? await prisma.deal.findUnique({
-          where: {
-            id: parsed.id,
-          },
-          include: {
-            stageRecord: true,
-            ownerMembership: true,
-          },
-        })
-      : null;
+    const { data: existing } = parsed.id
+      ? await supabase
+          .from("Deal")
+          .select("*, ownerMembership:Membership(*), stageRecord:PipelineStage(*)")
+          .eq("id", parsed.id)
+          .maybeSingle()
+      : { data: null };
 
     const nextPosition = existing
       ? existing.position
-      : await prisma.deal.count({
-          where: {
-            stageId: parsed.stageId,
-          },
-        });
+      : ((await supabase.from("Deal").select("id", { count: "exact", head: true }).eq("stageId", parsed.stageId)).count ?? 0);
 
-    const savedDeal = existing
-      ? await prisma.deal.update({
-          where: {
-            id: existing.id,
-          },
-          data: {
-            name: parsed.title,
-            description: parsed.description,
-            valueCents: BigInt(Math.round(parsed.value * 100)),
-            expectedCloseAt: parsed.expectedCloseAt ? new Date(parsed.expectedCloseAt) : null,
-            stageId: parsed.stageId,
-            stage: stageMeta.stageEnum,
-            companyId: relations.company.id,
-            contactId: relations.contact?.id ?? null,
-            ownerMembershipId: relations.owner?.id ?? null,
-            enteredStageAt:
-              existing.stageId === parsed.stageId ? existing.enteredStageAt : new Date(),
-          },
-          include: {
-            stageRecord: true,
-            ownerMembership: true,
-          },
-        })
-      : await prisma.deal.create({
-          data: {
-            workspaceId: context.workspaceId,
-            pipelineId: context.pipelineId,
-            stageId: parsed.stageId,
-            stage: stageMeta.stageEnum,
-            name: parsed.title,
-            description: parsed.description,
-            valueCents: BigInt(Math.round(parsed.value * 100)),
-            expectedCloseAt: parsed.expectedCloseAt ? new Date(parsed.expectedCloseAt) : null,
-            position: nextPosition,
-            companyId: relations.company.id,
-            contactId: relations.contact?.id ?? null,
-            ownerMembershipId: relations.owner?.id ?? null,
-          },
-          include: {
-            stageRecord: true,
-            ownerMembership: true,
-          },
-        });
+    const dealId = existing ? existing.id : crypto.randomUUID();
+    let savedDeal;
+
+    if (existing) {
+      const { data, error } = await supabase.from("Deal").update({
+        name: parsed.title,
+        description: parsed.description,
+        valueCents: Math.round(parsed.value * 100),
+        expectedCloseAt: parsed.expectedCloseAt ? new Date(parsed.expectedCloseAt).toISOString() : null,
+        stageId: parsed.stageId,
+        stage: stageMeta.stageEnum,
+        companyId: relations.company.id,
+        contactId: relations.contact?.id ?? null,
+        ownerMembershipId: relations.owner?.id ?? null,
+        enteredStageAt: existing.stageId === parsed.stageId ? existing.enteredStageAt : new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .eq("id", dealId)
+      .select("*, ownerMembership:Membership(*), stageRecord:PipelineStage(*)").single();
+
+      if (error) throw error;
+      savedDeal = data;
+    } else {
+      const { data, error } = await supabase.from("Deal").insert({
+        id: dealId,
+        workspaceId: context.workspaceId,
+        pipelineId: context.pipelineId,
+        stageId: parsed.stageId,
+        stage: stageMeta.stageEnum,
+        name: parsed.title,
+        description: parsed.description,
+        valueCents: Math.round(parsed.value * 100),
+        expectedCloseAt: parsed.expectedCloseAt ? new Date(parsed.expectedCloseAt).toISOString() : null,
+        position: nextPosition,
+        companyId: relations.company.id,
+        contactId: relations.contact?.id ?? null,
+        ownerMembershipId: relations.owner?.id ?? null,
+        enteredStageAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      })
+      .select("*, ownerMembership:Membership(*), stageRecord:PipelineStage(*)").single();
+
+      if (error) throw error;
+      savedDeal = data;
+    }
 
     if (existing && existing.stageId !== parsed.stageId) {
       await resequenceStagePositions({
-        prisma,
+        supabase,
         stageId: existing.stageId ?? parsed.stageId,
         excludeDealId: savedDeal.id,
       });
 
-      const durationInPreviousStageSeconds = Math.max(
-        0,
-        Math.floor((Date.now() - existing.enteredStageAt.getTime()) / 1000),
-      );
+      const durationInPreviousStageSeconds = existing.enteredStageAt
+        ? Math.max(0, Math.floor((Date.now() - new Date(existing.enteredStageAt).getTime()) / 1000))
+        : 0;
 
-      await prisma.dealStageTransition.create({
-        data: {
-          workspaceId: context.workspaceId,
-          dealId: savedDeal.id,
-          actorMembershipId: savedDeal.ownerMembershipId,
-          fromStageId: existing.stageId,
-          toStageId: parsed.stageId,
-          durationInPreviousStageSeconds,
-        },
+      await supabase.from("DealStageTransition").insert({
+        id: crypto.randomUUID(),
+        workspaceId: context.workspaceId,
+        dealId: savedDeal.id,
+        actorMembershipId: savedDeal.ownerMembershipId,
+        fromStageId: existing.stageId!,
+        toStageId: parsed.stageId,
+        durationInPreviousStageSeconds,
       });
 
       await emitDealEvent({
-        prisma,
+        supabase,
         workspaceId: context.workspaceId,
         pipelineId: context.pipelineId,
         stageId: parsed.stageId,
@@ -640,7 +610,7 @@ export async function saveDealAction(input: SaveDealInput): Promise<DealActionRe
     }
 
     await emitDealEvent({
-      prisma,
+      supabase,
       workspaceId: context.workspaceId,
       pipelineId: context.pipelineId,
       stageId: parsed.stageId,
@@ -723,42 +693,34 @@ export async function deleteDealAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getOrCreatePipelineContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getOrCreatePipelineContext(supabase);
 
     if (!context) {
       throw new Error("Pipeline context unavailable.");
     }
 
-    const deal = await prisma.deal.findUnique({
-      where: {
-        id: parsed.dealId,
-      },
-      include: {
-        ownerMembership: true,
-        stageRecord: true,
-      },
-    });
+    const { data: deal } = await supabase
+      .from("Deal")
+      .select("*, ownerMembership:Membership(*), stageRecord:PipelineStage(*)")
+      .eq("id", parsed.dealId)
+      .maybeSingle();
 
     if (!deal) {
       throw new Error("Deal not found.");
     }
 
-    await prisma.deal.delete({
-      where: {
-        id: deal.id,
-      },
-    });
+    await supabase.from("Deal").delete().eq("id", deal.id);
 
     if (deal.stageId) {
       await resequenceStagePositions({
-        prisma,
+        supabase,
         stageId: deal.stageId,
       });
     }
 
     await emitDealEvent({
-      prisma,
+      supabase,
       workspaceId: context.workspaceId,
       pipelineId: context.pipelineId,
       stageId: deal.stageId,

@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
-import { getPrismaClient } from "@/lib/db/prisma";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getCalendarContext } from "@/lib/calendar/context";
 import {
   createDemoCalendarEvent,
@@ -58,7 +60,7 @@ const deleteEventSchema = z.object({
 });
 
 async function resolveIntegrationAccountId(
-  prisma: ReturnType<typeof getPrismaClient>,
+  supabase: SupabaseClient<Database>,
   workspaceId: string,
   sourceCalendarId?: string,
 ) {
@@ -66,13 +68,13 @@ async function resolveIntegrationAccountId(
     return null;
   }
 
-  const integrationAccount = await prisma.integrationAccount.findFirst({
-    where: {
-      id: sourceCalendarId,
-      workspaceId,
-      isActive: true,
-    },
-  });
+  const { data: integrationAccount } = await supabase
+    .from("IntegrationAccount")
+    .select("id")
+    .eq("id", sourceCalendarId)
+    .eq("workspaceId", workspaceId)
+    .eq("isActive", true)
+    .maybeSingle();
 
   return integrationAccount?.id ?? null;
 }
@@ -89,31 +91,33 @@ export async function createEventAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
     const integrationAccountId = await resolveIntegrationAccountId(
-      prisma,
+      supabase,
       context.workspaceId,
       parsed.sourceCalendarId,
     );
 
-    const event = await prisma.calendarEvent.create({
-      data: {
-        workspaceId: context.workspaceId,
-        ownerMembershipId: context.actor.id,
-        integrationAccountId,
-        userId: context.actor.userId,
-        contactId: parsed.contactId || null,
-        dealId: parsed.dealId || null,
-        title: parsed.title,
-        description: parsed.description,
-        location: parsed.location,
-        startDatetime: new Date(parsed.startDatetime),
-        endDatetime: new Date(parsed.endDatetime),
-        isAllDay: parsed.isAllDay,
-        eventType: parsed.eventType,
-      },
-    });
+    const { data: event, error } = await supabase.from("CalendarEvent").insert({
+      id: crypto.randomUUID(),
+      workspaceId: context.workspaceId,
+      ownerMembershipId: context.actor.id,
+      integrationAccountId,
+      userId: context.actor.userId,
+      contactId: parsed.contactId || null,
+      dealId: parsed.dealId || null,
+      title: parsed.title,
+      description: parsed.description ?? null,
+      location: parsed.location ?? null,
+      startDatetime: new Date(parsed.startDatetime).toISOString(),
+      endDatetime: new Date(parsed.endDatetime).toISOString(),
+      isAllDay: parsed.isAllDay,
+      eventType: parsed.eventType,
+      updatedAt: new Date().toISOString()
+    }).select().single();
+
+    if (error) throw error;
 
     await dispatchCalendarSyncJob({
       eventId: event.id,
@@ -148,42 +152,40 @@ export async function updateEventAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
     const integrationAccountId = await resolveIntegrationAccountId(
-      prisma,
+      supabase,
       context.workspaceId,
       parsed.sourceCalendarId,
     );
 
-    const existing = await prisma.calendarEvent.findFirst({
-      where: {
-        id: parsed.eventId,
-        workspaceId: context.workspaceId,
-      },
-    });
+    const { data: existing } = await supabase
+      .from("CalendarEvent")
+      .select("id")
+      .eq("id", parsed.eventId)
+      .eq("workspaceId", context.workspaceId)
+      .maybeSingle();
 
     if (!existing) {
       throw new Error("Calendar event not found.");
     }
 
-    const event = await prisma.calendarEvent.update({
-      where: {
-        id: parsed.eventId,
-      },
-      data: {
-        integrationAccountId,
-        contactId: parsed.contactId || null,
-        dealId: parsed.dealId || null,
-        title: parsed.title,
-        description: parsed.description,
-        location: parsed.location,
-        startDatetime: new Date(parsed.startDatetime),
-        endDatetime: new Date(parsed.endDatetime),
-        isAllDay: parsed.isAllDay,
-        eventType: parsed.eventType,
-      },
-    });
+    const { data: event, error } = await supabase.from("CalendarEvent").update({
+      integrationAccountId,
+      contactId: parsed.contactId || null,
+      dealId: parsed.dealId || null,
+      title: parsed.title,
+      description: parsed.description ?? null,
+      location: parsed.location ?? null,
+      startDatetime: new Date(parsed.startDatetime).toISOString(),
+      endDatetime: new Date(parsed.endDatetime).toISOString(),
+      isAllDay: parsed.isAllDay,
+      eventType: parsed.eventType,
+      updatedAt: new Date().toISOString()
+    }).eq("id", parsed.eventId).select().single();
+
+    if (error) throw error;
 
     await dispatchCalendarSyncJob({
       eventId: event.id,
@@ -218,14 +220,14 @@ export async function deleteEventAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
-    const existing = await prisma.calendarEvent.findFirst({
-      where: {
-        id: parsed.eventId,
-        workspaceId: context.workspaceId,
-      },
-    });
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
+    const { data: existing } = await supabase
+      .from("CalendarEvent")
+      .select("id")
+      .eq("id", parsed.eventId)
+      .eq("workspaceId", context.workspaceId)
+      .maybeSingle();
 
     if (!existing) {
       throw new Error("Calendar event not found.");
@@ -236,11 +238,7 @@ export async function deleteEventAction(
       operation: "delete",
     });
 
-    await prisma.calendarEvent.delete({
-      where: {
-        id: existing.id,
-      },
-    });
+    await supabase.from("CalendarEvent").delete().eq("id", existing.id);
 
     revalidateCalendarViews();
 
@@ -305,18 +303,13 @@ export async function saveAppleCalendarConnectionAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
 
-    await prisma.integrationAccount.upsert({
-      where: {
-        provider_userId_externalCalendarId: {
-          provider: "APPLE",
-          userId: context.actor.userId,
-          externalCalendarId: parsed.data.caldavUrl,
-        },
-      },
-      update: {
+    const { data: existing } = await supabase.from("IntegrationAccount").select("id").eq("provider", "APPLE").eq("userId", context.actor.userId).eq("externalCalendarId", parsed.data.caldavUrl).maybeSingle();
+
+    if (existing) {
+      await supabase.from("IntegrationAccount").update({
         calendarName: parsed.data.calendarName,
         providerAccountEmail: parsed.data.appleId,
         accessToken: encryptSecret(parsed.data.appSpecificPassword),
@@ -326,8 +319,11 @@ export async function saveAppleCalendarConnectionAction(
           caldavUrl: parsed.data.caldavUrl,
           authentication: "app-specific-password",
         },
-      },
-      create: {
+        updatedAt: new Date().toISOString()
+      }).eq("id", existing.id);
+    } else {
+      await supabase.from("IntegrationAccount").insert({
+        id: crypto.randomUUID(),
         workspaceId: context.workspaceId,
         membershipId: context.actor.id,
         userId: context.actor.userId,
@@ -341,8 +337,9 @@ export async function saveAppleCalendarConnectionAction(
           caldavUrl: parsed.data.caldavUrl,
           authentication: "app-specific-password",
         },
-      },
-    });
+        updatedAt: new Date().toISOString()
+      });
+    }
 
     revalidateCalendarViews();
 
@@ -379,18 +376,13 @@ export async function disconnectCalendarConnectionAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
 
-    await prisma.integrationAccount.updateMany({
-      where: {
-        id: parsed.data.integrationAccountId,
-        workspaceId: context.workspaceId,
-      },
-      data: {
-        isActive: false,
-      },
-    });
+    await supabase.from("IntegrationAccount").update({
+      isActive: false,
+      updatedAt: new Date().toISOString()
+    }).eq("id", parsed.data.integrationAccountId).eq("workspaceId", context.workspaceId);
 
     revalidateCalendarViews();
 
@@ -427,18 +419,13 @@ export async function reactivateCalendarConnectionAction(
   }
 
   try {
-    const prisma = getPrismaClient();
-    const context = await getCalendarContext(prisma);
+    const supabase = supabaseAdmin;
+    const context = await getCalendarContext(supabase);
 
-    await prisma.integrationAccount.updateMany({
-      where: {
-        id: parsed.data.integrationAccountId,
-        workspaceId: context.workspaceId,
-      },
-      data: {
-        isActive: true,
-      },
-    });
+    await supabase.from("IntegrationAccount").update({
+      isActive: true,
+      updatedAt: new Date().toISOString()
+    }).eq("id", parsed.data.integrationAccountId).eq("workspaceId", context.workspaceId);
 
     revalidateCalendarViews();
 

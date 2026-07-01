@@ -3,8 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
+
+import { supabaseAdmin } from "@/lib/db/supabase";
 import { getCalendarContext } from "@/lib/calendar/context";
-import { getPrismaClient } from "@/lib/db/prisma";
 import { hasDatabaseConfig } from "@/lib/env/server";
 import { createLogger } from "@/lib/logger";
 import {
@@ -106,56 +109,60 @@ function formatNoteId(value: number) {
 }
 
 async function getScopedWorkspace(workspaceId: string) {
-  const prisma = getPrismaClient();
-  const context = await getCalendarContext(prisma);
-  const workspace = await prisma.noteWorkspace.findFirst({
-    where: {
-      id: workspaceId,
-      crmWorkspaceId: context.workspaceId,
-      userId: context.actor.userId,
-    },
-  });
+  const supabase = supabaseAdmin;
+  const context = await getCalendarContext(supabase);
+  const { data: workspace } = await supabase
+    .from("NoteWorkspace")
+    .select("*")
+    .eq("id", workspaceId)
+    .eq("crmWorkspaceId", context.workspaceId)
+    .eq("userId", context.actor.userId)
+    .maybeSingle();
 
   if (!workspace) {
     throw new Error("Notes workspace not found.");
   }
 
   return {
-    prisma,
+    supabase,
     context,
     workspace,
   };
 }
 
 async function resequenceColumn(
-  tx: ReturnType<typeof getPrismaClient>,
+  supabase: SupabaseClient<Database>,
   workspaceId: string,
   columnName?: string | null,
   excludeNoteId?: string,
 ) {
-  const cards = await tx.noteCard.findMany({
-    where: {
-      workspaceId,
-      ...(columnName == null ? { columnName: null } : { columnName }),
-      ...(excludeNoteId ? { id: { not: excludeNoteId } } : {}),
-    },
-    orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-    select: {
-      id: true,
-    },
-  });
+  let query = supabase
+    .from("NoteCard")
+    .select("id")
+    .eq("workspaceId", workspaceId)
+    .order("order", { ascending: true })
+    .order("createdAt", { ascending: true });
+
+  if (columnName === null || columnName === undefined) {
+    query = query.is("columnName", null);
+  } else {
+    query = query.eq("columnName", columnName);
+  }
+
+  if (excludeNoteId) {
+    query = query.neq("id", excludeNoteId);
+  }
+
+  const { data: cards } = await query;
+  if (!cards) return;
 
   await Promise.all(
     cards.map((card, index) =>
-      tx.noteCard.update({
-        where: {
-          id: card.id,
-        },
-        data: {
-          order: index,
-        },
-      }),
-    ),
+      supabase
+        .from("NoteCard")
+        .update({ order: index })
+        .eq("id", card.id)
+    )
   );
 }
 
@@ -169,53 +176,50 @@ export async function createNoteAction(input: CreateNoteInput): Promise<NoteActi
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
-    const noteId = await prisma.$transaction(async (tx) => {
-      const sequence = await tx.noteSequence.upsert({
-        where: {
-          id: "note-card",
-        },
-        update: {
-          currentValue: {
-            increment: 1,
-          },
-        },
-        create: {
-          id: "note-card",
-          currentValue: 1,
-        },
-      });
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    
+    let nextIdValue = 1;
+    const { data: seq } = await supabase.from("NoteSequence").select("currentValue").eq("id", "note-card").maybeSingle();
+    if (seq) {
+      nextIdValue = seq.currentValue + 1;
+      await supabase.from("NoteSequence").update({ currentValue: nextIdValue, updatedAt: new Date().toISOString() }).eq("id", "note-card");
+    } else {
+      await supabase.from("NoteSequence").insert({ id: "note-card", currentValue: 1, updatedAt: new Date().toISOString() });
+    }
 
-      const nextId = formatNoteId(sequence.currentValue);
-      const nextColumn =
-        workspace.viewType === "KANBAN"
-          ? parsed.columnName ??
-            ((((workspace.columnDefinitions as string[] | null) ?? [])[0] as string | undefined) ??
-              "Inbox")
-          : null;
-      const nextOrder = await tx.noteCard.count({
-        where: {
-          workspaceId: workspace.id,
-          ...(workspace.viewType === "KANBAN"
-            ? { columnName: nextColumn }
-            : { columnName: null }),
-        },
-      });
+    const nextId = formatNoteId(nextIdValue);
+    const nextColumn =
+      workspace.viewType === "KANBAN"
+        ? parsed.columnName ??
+          ((((workspace.columnDefinitions as string[] | null) ?? [])[0] as string | undefined) ??
+            "Inbox")
+        : null;
 
-      await tx.noteCard.create({
-        data: {
-          id: nextId,
-          workspaceId: workspace.id,
-          title: parsed.title,
-          content: parsed.content ?? "",
-          color: parsed.color ?? "#fff7d6",
-          columnName: nextColumn,
-          order: nextOrder,
-        },
-      });
+    let countQuery = supabase.from("NoteCard").select("id", { count: "exact", head: true }).eq("workspaceId", workspace.id);
+    if (workspace.viewType === "KANBAN") {
+      if (nextColumn) {
+        countQuery = countQuery.eq("columnName", nextColumn);
+      } else {
+        countQuery = countQuery.is("columnName", null);
+      }
+    } else {
+      countQuery = countQuery.is("columnName", null);
+    }
+    const { count } = await countQuery;
+    const nextOrder = count ?? 0;
 
-      return nextId;
+    await supabase.from("NoteCard").insert({
+      id: nextId,
+      workspaceId: workspace.id,
+      title: parsed.title,
+      content: parsed.content ?? "",
+      color: parsed.color ?? "#fff7d6",
+      columnName: nextColumn,
+      order: nextOrder,
+      updatedAt: new Date().toISOString()
     });
+
+    const noteId = nextId;
 
     revalidatePath("/notes");
 
@@ -243,13 +247,8 @@ export async function updateNoteAction(input: UpdateNoteInput): Promise<NoteActi
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
-    const existing = await prisma.noteCard.findFirst({
-      where: {
-        id: parsed.noteId,
-        workspaceId: workspace.id,
-      },
-    });
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { data: existing } = await supabase.from("NoteCard").select("*").eq("id", parsed.noteId).eq("workspaceId", workspace.id).maybeSingle();
 
     if (!existing) {
       throw new Error("Note not found.");
@@ -258,24 +257,20 @@ export async function updateNoteAction(input: UpdateNoteInput): Promise<NoteActi
     const nextColumnName =
       parsed.columnName !== undefined ? parsed.columnName : existing.columnName;
 
-    await prisma.noteCard.update({
-      where: {
-        id: existing.id,
-      },
-      data: {
-        title: parsed.title ?? existing.title,
-        content: parsed.content ?? existing.content,
-        color: parsed.color ?? existing.color,
-        columnName: nextColumnName,
-        order: parsed.order ?? existing.order,
-      },
-    });
+    await supabase.from("NoteCard").update({
+      title: parsed.title ?? existing.title,
+      content: parsed.content ?? existing.content,
+      color: parsed.color ?? existing.color,
+      columnName: nextColumnName,
+      order: parsed.order ?? existing.order,
+      updatedAt: new Date().toISOString()
+    }).eq("id", existing.id);
 
     if (workspace.viewType === "KANBAN" && existing.columnName !== nextColumnName) {
-      await resequenceColumn(prisma, workspace.id, existing.columnName, existing.id);
-      await resequenceColumn(prisma, workspace.id, nextColumnName, existing.id);
+      await resequenceColumn(supabase, workspace.id, existing.columnName, existing.id);
+      await resequenceColumn(supabase, workspace.id, nextColumnName, existing.id);
     } else {
-      await resequenceColumn(prisma, workspace.id, workspace.viewType === "KANBAN" ? nextColumnName : null);
+      await resequenceColumn(supabase, workspace.id, workspace.viewType === "KANBAN" ? nextColumnName : null);
     }
 
     revalidatePath("/notes");
@@ -304,26 +299,17 @@ export async function deleteNoteAction(input: DeleteNoteInput): Promise<NoteActi
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
-    const existing = await prisma.noteCard.findFirst({
-      where: {
-        id: parsed.noteId,
-        workspaceId: workspace.id,
-      },
-    });
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { data: existing } = await supabase.from("NoteCard").select("*").eq("id", parsed.noteId).eq("workspaceId", workspace.id).maybeSingle();
 
     if (!existing) {
       throw new Error("Note not found.");
     }
 
-    await prisma.noteCard.delete({
-      where: {
-        id: existing.id,
-      },
-    });
+    await supabase.from("NoteCard").delete().eq("id", existing.id);
 
     await resequenceColumn(
-      prisma,
+      supabase,
       workspace.id,
       workspace.viewType === "KANBAN" ? existing.columnName : null,
     );
@@ -354,13 +340,8 @@ export async function moveNoteAction(input: MoveNoteInput): Promise<NoteActionRe
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
-    const existing = await prisma.noteCard.findFirst({
-      where: {
-        id: parsed.noteId,
-        workspaceId: workspace.id,
-      },
-    });
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { data: existing } = await supabase.from("NoteCard").select("*").eq("id", parsed.noteId).eq("workspaceId", workspace.id).maybeSingle();
 
     if (!existing) {
       throw new Error("Note not found.");
@@ -369,19 +350,15 @@ export async function moveNoteAction(input: MoveNoteInput): Promise<NoteActionRe
     const sourceColumn = parsed.sourceColumnName ?? existing.columnName ?? null;
     const targetColumn = parsed.targetColumnName ?? existing.columnName ?? null;
 
-    const siblingCards = await prisma.noteCard.findMany({
-      where: {
-        workspaceId: workspace.id,
-        id: {
-          not: existing.id,
-        },
-      },
-      orderBy: [{ order: "asc" }, { createdAt: "asc" }],
-      select: {
-        id: true,
-        columnName: true,
-      },
-    });
+    const { data: siblingCardsData } = await supabase
+      .from("NoteCard")
+      .select("id, columnName")
+      .eq("workspaceId", workspace.id)
+      .neq("id", existing.id)
+      .order("order", { ascending: true })
+      .order("createdAt", { ascending: true });
+
+    const siblingCards = siblingCardsData || [];
 
     const sourceIds = siblingCards
       .filter((card) => (card.columnName ?? null) === sourceColumn)
@@ -393,37 +370,23 @@ export async function moveNoteAction(input: MoveNoteInput): Promise<NoteActionRe
     const nextTargetIds = [...(sourceColumn === targetColumn ? sourceIds : targetIds)];
     nextTargetIds.splice(Math.min(parsed.targetIndex, nextTargetIds.length), 0, existing.id);
 
-    await prisma.$transaction(async (tx) => {
-      if (sourceColumn !== targetColumn) {
-        await Promise.all(
-          sourceIds.map((id, index) =>
-            tx.noteCard.update({
-              where: { id },
-              data: { order: index },
-            }),
-          ),
-        );
-      }
-
+    if (sourceColumn !== targetColumn) {
       await Promise.all(
-        nextTargetIds.map((id, index) =>
-          tx.noteCard.update({
-            where: {
-              id,
-            },
-            data:
-              id === existing.id
-                ? {
-                    order: index,
-                    columnName: targetColumn,
-                  }
-                : {
-                    order: index,
-                  },
-          }),
-        ),
+        sourceIds.map((id, index) =>
+          supabase.from("NoteCard").update({ order: index }).eq("id", id)
+        )
       );
-    });
+    }
+
+    await Promise.all(
+      nextTargetIds.map((id, index) =>
+        supabase.from("NoteCard").update(
+          id === existing.id
+            ? { order: index, columnName: targetColumn }
+            : { order: index }
+        ).eq("id", id)
+      )
+    );
 
     revalidatePath("/notes");
 
@@ -451,20 +414,16 @@ export async function saveDocumentAction(input: SaveDocumentInput): Promise<Note
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
 
     if (workspace.viewType !== "DOC") {
       throw new Error("Workspace is not a document view.");
     }
 
-    await prisma.noteWorkspace.update({
-      where: {
-        id: workspace.id,
-      },
-      data: {
-        documentContent: parsed.content,
-      },
-    });
+    await supabase.from("NoteWorkspace").update({
+      documentContent: parsed.content,
+      updatedAt: new Date().toISOString()
+    }).eq("id", workspace.id);
 
     revalidatePath("/notes");
 
@@ -494,20 +453,16 @@ export async function saveWhiteboardAction(
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
 
     if (workspace.viewType !== "WHITEBOARD") {
       throw new Error("Workspace is not a whiteboard view.");
     }
 
-    await prisma.noteWorkspace.update({
-      where: {
-        id: workspace.id,
-      },
-      data: {
-        whiteboardData: parsed.data,
-      },
-    });
+    await supabase.from("NoteWorkspace").update({
+      whiteboardData: parsed.data as any,
+      updatedAt: new Date().toISOString()
+    }).eq("id", workspace.id);
 
     revalidatePath("/notes");
 
@@ -537,7 +492,7 @@ export async function updateWorkspaceColumnsAction(
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
 
     if (workspace.viewType !== "KANBAN") {
       throw new Error("Workspace is not a kanban view.");
@@ -548,33 +503,27 @@ export async function updateWorkspaceColumnsAction(
     );
     const fallbackColumn = nextColumns[0];
 
-    await prisma.$transaction(async (tx) => {
-      await tx.noteWorkspace.update({
-        where: {
-          id: workspace.id,
-        },
-        data: {
-          columnDefinitions: nextColumns,
-        },
-      });
+    await supabase.from("NoteWorkspace").update({
+      columnDefinitions: nextColumns as any,
+      updatedAt: new Date().toISOString()
+    }).eq("id", workspace.id);
 
-      await tx.noteCard.updateMany({
-        where: {
-          workspaceId: workspace.id,
-          NOT: {
-            columnName: {
-              in: nextColumns,
-            },
-          },
-        },
-        data: {
-          columnName: fallbackColumn,
-        },
-      });
-    });
+    const { data: cardsToMove } = await supabase
+      .from("NoteCard")
+      .select("id")
+      .eq("workspaceId", workspace.id)
+      .not("columnName", "in", `(${nextColumns.join(",")})`);
+
+    if (cardsToMove && cardsToMove.length > 0) {
+      await Promise.all(
+        cardsToMove.map(card => 
+          supabase.from("NoteCard").update({ columnName: fallbackColumn }).eq("id", card.id)
+        )
+      );
+    }
 
     for (const columnName of nextColumns) {
-      await resequenceColumn(prisma, workspace.id, columnName);
+      await resequenceColumn(supabase, workspace.id, columnName);
     }
 
     revalidatePath("/notes");
@@ -605,16 +554,12 @@ export async function renameWorkspaceAction(
   }
 
   try {
-    const { prisma, workspace } = await getScopedWorkspace(parsed.workspaceId);
+    const { supabase, workspace } = await getScopedWorkspace(parsed.workspaceId);
 
-    await prisma.noteWorkspace.update({
-      where: {
-        id: workspace.id,
-      },
-      data: {
-        name: parsed.name,
-      },
-    });
+    await supabase.from("NoteWorkspace").update({
+      name: parsed.name,
+      updatedAt: new Date().toISOString()
+    }).eq("id", workspace.id);
 
     revalidatePath("/notes");
 
