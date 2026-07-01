@@ -57,7 +57,7 @@ export async function signInAction(input: {
 
   return {
     status: "success",
-    message: "Welcome back to Axe CRM.",
+    message: "Welcome back to OslerNotes CRM.",
   };
 }
 

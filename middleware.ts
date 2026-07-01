@@ -74,11 +74,13 @@ export async function middleware(request: NextRequest) {
     });
   }
 
+  const isServerAction = request.headers.has("next-action");
+
   if (!user && isProtectedRoute(pathname)) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  if (user && pathname === "/") {
+  if (user && pathname === "/" && !isServerAction && request.method !== "POST") {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 

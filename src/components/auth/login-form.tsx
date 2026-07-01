@@ -26,7 +26,7 @@ function getCopy(locale: AppLocale) {
   if (locale === "pt-BR") {
     return {
       badge: "Autenticação Supabase",
-      title: "Entre no Axe CRM",
+      title: "Entre no OslerNotes CRM",
       description:
         "Use e-mail e senha para abrir o dashboard protegido por middleware e sessão baseada em cookies.",
       email: "E-mail",
@@ -45,7 +45,7 @@ function getCopy(locale: AppLocale) {
 
   return {
     badge: "Supabase Authentication",
-    title: "Sign in to Axe CRM",
+    title: "Sign in to OslerNotes CRM",
     description:
       "Use your email and password to access the middleware-protected dashboard with cookie-based sessions.",
     email: "Email",

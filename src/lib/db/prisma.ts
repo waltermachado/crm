@@ -4,7 +4,7 @@ import { AppError } from "@/lib/errors/app-error";
 import { getServerEnv } from "@/lib/env/server";
 
 declare global {
-  var __axePrisma__: PrismaClient | undefined;
+  var __oslernotesPrisma__: PrismaClient | undefined;
 }
 
 export function getPrismaClient() {
@@ -17,11 +17,11 @@ export function getPrismaClient() {
     });
   }
 
-  if (!globalThis.__axePrisma__) {
-    globalThis.__axePrisma__ = new PrismaClient({
+  if (!globalThis.__oslernotesPrisma__) {
+    globalThis.__oslernotesPrisma__ = new PrismaClient({
       log: process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
     });
   }
 
-  return globalThis.__axePrisma__;
+  return globalThis.__oslernotesPrisma__;
 }

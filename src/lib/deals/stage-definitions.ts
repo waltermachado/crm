@@ -64,7 +64,7 @@ export const DEFAULT_PIPELINE_ID = "demo-pipeline";
 export const DEFAULT_ACTOR = {
   id: "demo-owner-1",
   name: "Walter Machado",
-  email: "walter@axecrm.local",
+  email: "walter@oslernotes.local",
 };
 
 export function getStageMetaBySlug(slug: PipelineStageSlug) {

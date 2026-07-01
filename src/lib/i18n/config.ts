@@ -1,4 +1,4 @@
-export const LOCALE_COOKIE_NAME = "axe-locale";
+export const LOCALE_COOKIE_NAME = "oslernotes-locale";
 
 export const SUPPORTED_LOCALES = ["en-US", "pt-BR"] as const;
 

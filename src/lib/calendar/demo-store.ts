@@ -24,7 +24,7 @@ type DemoCalendarState = {
 };
 
 declare global {
-  var __axeDemoCalendarState__: DemoCalendarState | undefined;
+  var __oslernotesDemoCalendarState__: DemoCalendarState | undefined;
 }
 
 function startOfDay(date: Date) {
@@ -62,7 +62,7 @@ function createInitialDemoState(): DemoCalendarState {
         provider: "GOOGLE",
         label: "Google Calendar",
         description: "Sincronização preparada com watch channel e sync token.",
-        providerAccountEmail: "walter@axedemo.com",
+        providerAccountEmail: "walter@oslernotes.com",
         colorClassName:
           "bg-emerald-500/12 text-emerald-700 ring-emerald-500/20 dark:text-emerald-200",
         enabled: true,
@@ -196,11 +196,11 @@ function createInitialDemoState(): DemoCalendarState {
 }
 
 function getState() {
-  if (!globalThis.__axeDemoCalendarState__) {
-    globalThis.__axeDemoCalendarState__ = createInitialDemoState();
+  if (!globalThis.__oslernotesDemoCalendarState__) {
+    globalThis.__oslernotesDemoCalendarState__ = createInitialDemoState();
   }
 
-  return globalThis.__axeDemoCalendarState__;
+  return globalThis.__oslernotesDemoCalendarState__;
 }
 
 function normalizeSourceCalendar(

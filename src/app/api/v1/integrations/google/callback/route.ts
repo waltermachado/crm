@@ -31,8 +31,8 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const state = requestUrl.searchParams.get("state");
-  const cookieState = request.cookies.get("axe-google-oauth-state")?.value;
-  const returnTo = request.cookies.get("axe-google-oauth-return-to")?.value ?? CALENDAR_SETTINGS_PATH;
+  const cookieState = request.cookies.get("oslernotes-google-oauth-state")?.value;
+  const returnTo = request.cookies.get("oslernotes-google-oauth-return-to")?.value ?? CALENDAR_SETTINGS_PATH;
 
   if (!code || !state || !cookieState || state !== cookieState) {
     return NextResponse.redirect(
@@ -107,15 +107,15 @@ export async function GET(request: NextRequest) {
     });
 
     const response = NextResponse.redirect(buildRedirectUrl(request, returnTo, "connected"));
-    response.cookies.delete("axe-google-oauth-state");
-    response.cookies.delete("axe-google-oauth-return-to");
+    response.cookies.delete("oslernotes-google-oauth-state");
+    response.cookies.delete("oslernotes-google-oauth-return-to");
     return response;
   } catch {
     const response = NextResponse.redirect(
       buildRedirectUrl(request, returnTo, "error", "google-oauth-callback-failed"),
     );
-    response.cookies.delete("axe-google-oauth-state");
-    response.cookies.delete("axe-google-oauth-return-to");
+    response.cookies.delete("oslernotes-google-oauth-state");
+    response.cookies.delete("oslernotes-google-oauth-return-to");
     return response;
   }
 }

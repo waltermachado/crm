@@ -23,7 +23,7 @@ type DemoNotesState = {
 };
 
 declare global {
-  var __axeDemoNotesState__: DemoNotesState | undefined;
+  var __oslernotesDemoNotesState__: DemoNotesState | undefined;
 }
 
 const GRID_COLORS = ["#fff7d6", "#dff7f2", "#e9e7ff", "#ffe4e6", "#dbeafe"] as const;
@@ -206,11 +206,11 @@ function createInitialDemoState(): DemoNotesState {
 }
 
 function getState() {
-  if (!globalThis.__axeDemoNotesState__) {
-    globalThis.__axeDemoNotesState__ = createInitialDemoState();
+  if (!globalThis.__oslernotesDemoNotesState__) {
+    globalThis.__oslernotesDemoNotesState__ = createInitialDemoState();
   }
 
-  return globalThis.__axeDemoNotesState__;
+  return globalThis.__oslernotesDemoNotesState__;
 }
 
 function cloneWorkspace(workspace: NoteWorkspaceRecord): NoteWorkspaceRecord {

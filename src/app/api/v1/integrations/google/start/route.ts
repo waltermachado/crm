@@ -37,14 +37,14 @@ export async function GET(request: Request) {
   });
   const response = NextResponse.redirect(authorizationUrl);
 
-  response.cookies.set("axe-google-oauth-state", state, {
+  response.cookies.set("oslernotes-google-oauth-state", state, {
     httpOnly: true,
     secure: secureCookie,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 10,
   });
-  response.cookies.set("axe-google-oauth-return-to", returnTo, {
+  response.cookies.set("oslernotes-google-oauth-return-to", returnTo, {
     httpOnly: true,
     secure: secureCookie,
     sameSite: "lax",

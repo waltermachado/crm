@@ -6,8 +6,8 @@ import { createServerSupabaseClient } from "@/lib/supabase/server";
 function createUserLabel(email: string | undefined) {
   if (!email) {
     return {
-      initials: "AX",
-      label: "Axe CRM User",
+      initials: "ON",
+      label: "OslerNotes CRM User",
     };
   }
 

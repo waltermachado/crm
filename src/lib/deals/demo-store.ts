@@ -55,7 +55,7 @@ type StoredPipelineState = {
 };
 
 declare global {
-  var __axeDemoPipelineState__: StoredPipelineState | undefined;
+  var __oslernotesDemoPipelineState__: StoredPipelineState | undefined;
 }
 
 function createInitialDemoState(): StoredPipelineState {
@@ -321,11 +321,11 @@ function buildBoardSnapshot(state: StoredPipelineState, locale: AppLocale): Deal
 }
 
 export async function getDemoPipelineState() {
-  if (!globalThis.__axeDemoPipelineState__) {
-    globalThis.__axeDemoPipelineState__ = createInitialDemoState();
+  if (!globalThis.__oslernotesDemoPipelineState__) {
+    globalThis.__oslernotesDemoPipelineState__ = createInitialDemoState();
   }
 
-  return globalThis.__axeDemoPipelineState__;
+  return globalThis.__oslernotesDemoPipelineState__;
 }
 
 export async function getDemoPipelineSnapshot(locale: AppLocale) {
@@ -334,7 +334,7 @@ export async function getDemoPipelineSnapshot(locale: AppLocale) {
 }
 
 export async function writeDemoPipelineState(state: StoredPipelineState) {
-  globalThis.__axeDemoPipelineState__ = state;
+  globalThis.__oslernotesDemoPipelineState__ = state;
 }
 
 export async function moveDemoDeal(input: DealMoveInput) {
